@@ -17,7 +17,7 @@ answer = [
 ]
 
 
-def generate_all_possible(row_puzzle: Matrix) -> Matrix:
+def generate_all_possible(row_puzzle: Matrix) -> List[Matrix]:
     pass
 
 
@@ -47,9 +47,9 @@ def main():
     while not matched(puzzle, board):
         # compute row
         for i in range(dim):
-            row_possibilities[i] = ignore_impossible(
-                row_possibilities[i], board[i])
-            board[i] = count_absolute_answer(row_possibilities[i])
+            possibilities[i] = ignore_impossible(
+                possibilities[i], board[i])
+            board[i] = count_absolute_answer(possibilities[i])
         # compute col in next iteration
         transpose(board)
         possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
