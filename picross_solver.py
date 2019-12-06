@@ -43,6 +43,7 @@ def main():
     # possibilities = [[0] * dim for i in range(2)]
     row_possibilities = generate_all_possible(puzzle[1])
     col_possibilities = generate_all_possible(puzzle[0])
+    possibilities = row_possibilities
     while not matched(puzzle, board):
         # compute row
         for i in range(dim):
@@ -51,3 +52,4 @@ def main():
             board[i] = count_absolute_answer(row_possibilities[i])
         # compute col in next iteration
         transpose(board)
+        possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
