@@ -27,8 +27,8 @@ def gen_line(line: List, length: int) -> Matrix:
     for i in range(length - ele + 1):
         if sum(line[1:]) + len(line[1:]) - 1 + ele > length:
             continue
-        next_ans = gen_line(line[1:], length - ele - i)
-        ans.extend([[0] * i + [1] * ele + j for j in next_ans])
+        next_ans = gen_line(line[1:], length - ele - i - 1)
+        ans.extend([[0] * i + [1] * ele + [0] + j for j in next_ans])
     return ans
 
 
