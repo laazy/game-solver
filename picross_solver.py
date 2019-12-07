@@ -36,30 +36,48 @@ def generate_all_possible(row_puzzle: Matrix) -> List[Matrix]:
     return [gen_line(i, dim) for i in row_puzzle]
 
 
+def no_conflict(pos: List, row: List) -> bool:
+    for i in range(dim):
+        if row[i] is not None and pos[i] != row[i]:
+            return False
+    return True
+
+
 def ignore_impossible(possibility: Matrix, row: List) -> Matrix:
-    pass
+    ans = []
+    for i in possibility:
+        if no_conflict(i, row):
+            ans.append(i)
+    return ans
 
 
 def count_absolute_answer(possibility: Matrix) -> List:
-    pass
+    ans = []
+    count_table = {0: 0, len(possibility): 1}
+    for i in zip(*possibility):
+        ans.append(count_table.get(sum(i), None))
+    return ans
 
 
-def matched(puzzle: Puzzle, board: Matrix) -> bool:
+def matched(board: Matrix) -> bool:
+    for i in board:
+        if None in i:
+            return False
     return True
 
 
 def transpose(board: Matrix) -> None:
     for i in range(dim):
-        for j in range(dim):
+        for j in range(i, dim):
             board[i][j],  board[j][i] = board[j][i], board[i][j]
 
 
 def main():
-    board = [[0] * dim for _ in range(dim)]
+    board = [[None] * dim for _ in range(dim)]
     row_possibilities = generate_all_possible(puzzle[1])
     col_possibilities = generate_all_possible(puzzle[0])
     possibilities = row_possibilities
-    while not matched(puzzle, board):
+    while not matched(board):
         # compute row
         for i in range(dim):
             possibilities[i] = ignore_impossible(
@@ -68,8 +86,10 @@ def main():
         # compute col in next iteration
         transpose(board)
         possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
+    return board
 
 
 if __name__ == "__main__":
-    row_possibilities = generate_all_possible(puzzle[1])
-    print(row_possibilities)
+    board = main()
+    for i in board:
+        print(i)
