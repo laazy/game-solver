@@ -1,6 +1,8 @@
 from typing import List
 from itertools import cycle
 import sys
+import numpy as np
+import time
 
 Matrix = List[List[int]]
 Puzzle = List[Matrix]
@@ -37,7 +39,7 @@ class Solver:
         self.row = int(size_line[0])
         self.col = int(size_line[1])
         self.dim = self.row
-        self.board = [[None] * self.col for _ in range(self.row)]
+        self.board = np.zeros((self.row, self.col), np.int8)
         row_info_line = lines[1].split(',')
         self.row_info = list(
             map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
@@ -56,25 +58,26 @@ class Solver:
             for i in range(self.dim):
                 possibilities[i] = self.ignore_impossible(
                     possibilities[i], self.board[i])
-                self.board[i] = self.count_absolute_answer(possibilities[i])
+                tmp = self.count_absolute_answer(possibilities[i])
+                self.board[i] = tmp
             # compute col in next iteration
             self.transpose()
             possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
         if possibilities is col_possibilities:
-            self.transpose(board)
+            self.transpose()
 
     def output(self):
         self.print_board()
 
     def gen_line(self, line: List, length: int) -> Matrix:
         def _gen(i):
-            ans = [0] * i + [1] * ele
+            ans = [-1] * i + [1] * ele
             if i + ele < length:
-                ans.append(0)
+                ans.append(-1)
             return ans
 
         if not line:
-            return [[0] * length]
+            return [[-1] * length]
         ele = line[0]
         ans = []
         for i in range(length - ele + 1):
@@ -86,7 +89,7 @@ class Solver:
 
     def no_conflict(self, pos: List, row: List) -> bool:
         for i in range(self.dim):
-            if row[i] is not None and pos[i] != row[i]:
+            if row[i] != 0 and pos[i] != row[i]:
                 return False
         return True
 
@@ -97,23 +100,26 @@ class Solver:
                 ans.append(i)
         return ans
 
-    def count_absolute_answer(self, possibility: Matrix) -> List:
+    def count_absolute_answer(self, possibility: Matrix):
         ans = []
-        count_table = {0: 0, len(possibility): 1}
+        count_table = {-len(possibility): -1, len(possibility): 1}
         for i in zip(*possibility):
-            ans.append(count_table.get(sum(i), None))
-        return ans
+            ans.append(count_table.get(sum(i), 0))
+        if len(ans) != self.dim:
+            breakpoint()
+        return np.array(ans, dtype=np.int8)
 
     def matched(self) -> bool:
         for i in self.board:
-            if None in i:
+            if 0 in i:
                 return False
         return True
 
     def transpose(self) -> None:
-        for i in range(self.dim):
-            for j in range(i, self.dim):
-                self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
+        self.board = self.board.T
+        # for i in range(self.dim):
+        #     for j in range(i, self.dim):
+        #         self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
 
 
 if __name__ == "__main__":
@@ -122,5 +128,8 @@ if __name__ == "__main__":
         exit(-1)
     solver = Solver()
     solver.load_puzzle(sys.argv[1])
+    _start = time.time()
     solver.solve()
+    _end = time.time()
     solver.output()
+    print(f"time spent: {_end - _start}")
