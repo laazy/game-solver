@@ -104,10 +104,9 @@ class Solver:
             if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
             header = _gen(i)
-            if not self.no_conflict(header, line[:len(header)]):
-                continue
-            next_ans = self.gen_line(info[1:], line[len(header):])
-            ans.extend([header + j for j in next_ans])
+            if self.no_conflict(header, line[:len(header)]):
+                next_ans = self.gen_line(info[1:], line[len(header):])
+                ans.extend([header + j for j in next_ans])
         return ans
 
     def no_conflict(self, pos: List, row: List) -> bool:
