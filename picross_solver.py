@@ -35,9 +35,11 @@ class Solver:
         self.dim = self.row
         self.board = [[None] * self.col for _ in range(self.row)]
         row_info_line = lines[1].split(',')
-        self.row_info = list(map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
+        self.row_info = list(
+            map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
         col_info_line = lines[2].split(',')
-        self.col_info = list(map(lambda item: self.str_list_to_int_list(item.split()), col_info_line))
+        self.col_info = list(
+            map(lambda item: self.str_list_to_int_list(item.split()), col_info_line))
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
         # self.print_board()
@@ -58,8 +60,7 @@ class Solver:
             self.transpose()
             possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
         if possibilities is col_possibilities:
-            transpose(board)
-
+            self.transpose(board)
 
     def output(self):
         self.print_board()
