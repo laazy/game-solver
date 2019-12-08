@@ -78,11 +78,9 @@ class Solver:
                 index = item["index"]
                 if item["type"] == ROW:
                     line = self.board[index]
-                    length = self.col
                     info = self.row_info[index]
                 else:
                     line = list(map(lambda l: l[index], self.board))
-                    length = self.row
                     info = self.col_info[index]
 
                 if 0 not in line:
@@ -95,7 +93,7 @@ class Solver:
                     possibilities = row_possibilities[index]
                 else:
                     if col_possibilities[index] is None:
-                        col_possibilities[index] = self.gen_line(info, length)
+                        col_possibilities[index] = self.gen_line(info, line)
                     col_possibilities[index] = self.ignore_impossible(col_possibilities[index], line)
                     possibilities = col_possibilities[index]
                     
@@ -111,26 +109,31 @@ class Solver:
     def output(self):
         self.print_board()
 
-    def gen_line(self, line: List, length: int) -> Matrix:
+    def gen_line(self, info: List, line: List) -> Matrix:
+        length = len(line)
+
         def _gen(i):
             ans = [-1] * i + [1] * ele
             if i + ele < length:
                 ans.append(-1)
             return ans
 
-        if not line:
+        if not info:
             return [[-1] * length]
-        ele = line[0]
+        ele = info[0]
         ans = []
         for i in range(length - ele + 1):
-            if sum(line[1:]) + len(line[1:]) - 1 > length - ele - i:
+            if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
-            next_ans = self.gen_line(line[1:], length - ele - i - 1)
-            ans.extend([_gen(i) + j for j in next_ans])
+            header = _gen(i)
+            if not self.no_conflict(header, line[:len(header)]):
+                continue
+            next_ans = self.gen_line(info[1:], line[len(header):])
+            ans.extend([header + j for j in next_ans])
         return ans
 
     def no_conflict(self, pos: List, row: List) -> bool:
-        for i in range(self.dim):
+        for i in range(len(pos)):
             if row[i] != 0 and pos[i] != row[i]:
                 return False
         return True
