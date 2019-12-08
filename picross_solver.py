@@ -1,7 +1,6 @@
 from typing import List
 from itertools import cycle
 import sys
-import numpy as np
 import time
 
 Matrix = List[List[int]]
@@ -19,9 +18,7 @@ class Solver:
 
     @staticmethod
     def str_list_to_int_list(str_list: List[str]) -> List[int]:
-        # return [int(i) for i in str_list]
-        return list(map(lambda item: int(item), str_list))
-
+        return [int(i) for i in str_list]
 
     def print_board(self):
         for rows in self.board:
@@ -39,7 +36,7 @@ class Solver:
         self.row = int(size_line[0])
         self.col = int(size_line[1])
         self.dim = self.row
-        self.board = np.zeros((self.row, self.col), np.int8)
+        self.board = [[0] * self.col for _ in range(self.row)]
         row_info_line = lines[1].split(',')
         self.row_info = list(
             map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
@@ -100,14 +97,12 @@ class Solver:
                 ans.append(i)
         return ans
 
-    def count_absolute_answer(self, possibility: Matrix):
+    def count_absolute_answer(self, possibility: Matrix) -> List:
         ans = []
         count_table = {-len(possibility): -1, len(possibility): 1}
         for i in zip(*possibility):
             ans.append(count_table.get(sum(i), 0))
-        if len(ans) != self.dim:
-            breakpoint()
-        return np.array(ans, dtype=np.int8)
+        return ans
 
     def matched(self) -> bool:
         for i in self.board:
@@ -116,10 +111,9 @@ class Solver:
         return True
 
     def transpose(self) -> None:
-        self.board = self.board.T
-        # for i in range(self.dim):
-        #     for j in range(i, self.dim):
-        #         self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
+        for i in range(self.dim):
+            for j in range(i, self.dim):
+                self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
 
 
 if __name__ == "__main__":
