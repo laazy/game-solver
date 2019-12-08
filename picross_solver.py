@@ -55,37 +55,36 @@ class Solver:
                 "score": sum(col) + len(col) - 1
             })
         res.sort(key=lambda item: item["score"], reverse=True)
-        return res
+        return cycle(res)
 
     def solve(self):
-        row_possibilities = [None] * self.col
-        col_possibilities = [None] * self.row
-
+        row_p13s, col_p13s = [None] * self.col, [None] * self.row
         round_orders = self.cal_orders()
-        while not self.matched():
-            for item in round_orders:
-                index = item["index"]
-                if item["type"] == ROW:
-                    line = self.board[index]
-                    info = self.row_info[index]
-                    p13s = row_possibilities
-                else:
-                    line = [i[index] for i in self.board]
-                    info = self.col_info[index]
-                    p13s = col_possibilities
+        for item in round_orders:
+            index = item["index"]
+            if item["type"] == ROW:
+                line = self.board[index]
+                info = self.row_info[index]
+                p13s = row_p13s
+            else:
+                line = [i[index] for i in self.board]
+                info = self.col_info[index]
+                p13s = col_p13s
 
-                if 0 not in line:
-                    continue
+            if 0 not in line:
+                continue
 
-                p13s[index] = p13s[index] or self.gen_line(info, line)
-                p13s[index] = self.ignore_impossible(p13s[index], line)
-                absolute_answer = self.count_absolute_answer(p13s[index])
+            p13s[index] = p13s[index] or self.gen_line(info, line)
+            p13s[index] = self.ignore_impossible(p13s[index], line)
+            absolute_answer = self.count_absolute_answer(p13s[index])
 
-                if item["type"] == ROW:
-                    self.board[index] = absolute_answer
-                else:
-                    for i in range(self.row):
-                        self.board[i][index] = absolute_answer[i]
+            if item["type"] == ROW:
+                self.board[index] = absolute_answer
+            else:
+                for i in range(self.row):
+                    self.board[i][index] = absolute_answer[i]
+            if self.matched():
+                break
 
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
