@@ -1,6 +1,8 @@
 from typing import List
+from itertools import cycle
+import sys
 
-Matrix = List[List]
+Matrix = List[List[int]]
 Puzzle = List[Matrix]
 
 
@@ -15,7 +17,9 @@ class Solver:
 
     @staticmethod
     def str_list_to_int_list(str_list: List[str]) -> List[int]:
+        # return [int(i) for i in str_list]
         return list(map(lambda item: int(item), str_list))
+
 
     def print_board(self):
         for rows in self.board:
@@ -42,9 +46,6 @@ class Solver:
             map(lambda item: self.str_list_to_int_list(item.split()), col_info_line))
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
-        # self.print_board()
-        # print(self.row_info)
-        # print(self.col_info)
 
     def solve(self):
         row_possibilities = [self.gen_line(i, self.dim) for i in self.row_info]
@@ -116,7 +117,10 @@ class Solver:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("You must specify file name")
+        exit(-1)
     solver = Solver()
-    solver.load_puzzle("6739.txt")
+    solver.load_puzzle(sys.argv[1])
     solver.solve()
     solver.output()
