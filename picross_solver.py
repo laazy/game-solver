@@ -1,6 +1,7 @@
 from typing import List
 from itertools import cycle
 import sys
+import time
 
 Matrix = List[List[int]]
 Puzzle = List[Matrix]
@@ -17,17 +18,12 @@ class Solver:
 
     @staticmethod
     def str_list_to_int_list(str_list: List[str]) -> List[int]:
-        # return [int(i) for i in str_list]
-        return list(map(lambda item: int(item), str_list))
-
+        return [int(i) for i in str_list]
 
     def print_board(self):
         for rows in self.board:
             for item in rows:
-                if item is None:
-                    print("N  ", end="")
-                else:
-                    print(f"{item:3}", end="")
+                print(f"{item if item == 1 else 0:3}", end="")
             print()
 
     def load_puzzle(self, file_path: str):
@@ -37,7 +33,7 @@ class Solver:
         self.row = int(size_line[0])
         self.col = int(size_line[1])
         self.dim = self.row
-        self.board = [[None] * self.col for _ in range(self.row)]
+        self.board = [[0] * self.col for _ in range(self.row)]
         row_info_line = lines[1].split(',')
         self.row_info = list(
             map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
@@ -61,20 +57,20 @@ class Solver:
             self.transpose()
             possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
         if possibilities is col_possibilities:
-            self.transpose(board)
+            self.transpose()
 
     def output(self):
         self.print_board()
 
     def gen_line(self, line: List, length: int) -> Matrix:
         def _gen(i):
-            ans = [0] * i + [1] * ele
+            ans = [-1] * i + [1] * ele
             if i + ele < length:
-                ans.append(0)
+                ans.append(-1)
             return ans
 
         if not line:
-            return [[0] * length]
+            return [[-1] * length]
         ele = line[0]
         ans = []
         for i in range(length - ele + 1):
@@ -86,7 +82,7 @@ class Solver:
 
     def no_conflict(self, pos: List, row: List) -> bool:
         for i in range(self.dim):
-            if row[i] is not None and pos[i] != row[i]:
+            if row[i] != 0 and pos[i] != row[i]:
                 return False
         return True
 
@@ -99,14 +95,14 @@ class Solver:
 
     def count_absolute_answer(self, possibility: Matrix) -> List:
         ans = []
-        count_table = {0: 0, len(possibility): 1}
+        count_table = {-len(possibility): -1, len(possibility): 1}
         for i in zip(*possibility):
-            ans.append(count_table.get(sum(i), None))
+            ans.append(count_table.get(sum(i), 0))
         return ans
 
     def matched(self) -> bool:
         for i in self.board:
-            if None in i:
+            if 0 in i:
                 return False
         return True
 
@@ -122,5 +118,8 @@ if __name__ == "__main__":
         exit(-1)
     solver = Solver()
     solver.load_puzzle(sys.argv[1])
+    _start = time.time()
     solver.solve()
+    _end = time.time()
     solver.output()
+    print(f"time spent: {_end - _start}")
