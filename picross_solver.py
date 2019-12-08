@@ -20,8 +20,8 @@ class Solver:
         self.col_info = []
 
     @staticmethod
-    def str_list_to_int_list(str_list: List[str]) -> List[int]:
-        return [int(i) for i in str_list]
+    def str_to_hint_matrix(s: str) -> List[int]:
+        return [[int(j) for j in i.split()] for i in s.split(',')]
 
     def print_board(self):
         for rows in self.board:
@@ -32,17 +32,11 @@ class Solver:
     def load_puzzle(self, file_path: str):
         with open(file_path, 'r') as f:
             lines = f.readlines()
-        size_line = lines[0].split()
-        self.row = int(size_line[0])
-        self.col = int(size_line[1])
+        self.row, self.col = (int(i) for i in lines[0].strip().split())
         self.dim = self.row
         self.board = [[0] * self.col for _ in range(self.row)]
-        row_info_line = lines[1].split(',')
-        self.row_info = list(
-            map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
-        col_info_line = lines[2].split(',')
-        self.col_info = list(
-            map(lambda item: self.str_list_to_int_list(item.split()), col_info_line))
+        self.col_info = self.str_to_hint_matrix(lines[1])
+        self.row_info = self.str_to_hint_matrix(lines[2])
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
 
@@ -61,7 +55,6 @@ class Solver:
                 "score": sum(col) + len(col) - 1
             })
         res.sort(key=lambda item: item["score"], reverse=True)
-        # print(res)
         return res
 
     def solve(self):
@@ -80,7 +73,7 @@ class Solver:
                     line = self.board[index]
                     info = self.row_info[index]
                 else:
-                    line = list(map(lambda l: l[index], self.board))
+                    line = [i[index] for i in self.board]
                     info = self.col_info[index]
 
                 if 0 not in line:
@@ -89,25 +82,22 @@ class Solver:
                 if item["type"] == ROW:
                     if row_possibilities[index] is None:
                         row_possibilities[index] = self.gen_line(info, line)
-                    row_possibilities[index] = self.ignore_impossible(row_possibilities[index], line)
+                    row_possibilities[index] = self.ignore_impossible(
+                        row_possibilities[index], line)
                     possibilities = row_possibilities[index]
                 else:
                     if col_possibilities[index] is None:
                         col_possibilities[index] = self.gen_line(info, line)
-                    col_possibilities[index] = self.ignore_impossible(col_possibilities[index], line)
+                    col_possibilities[index] = self.ignore_impossible(
+                        col_possibilities[index], line)
                     possibilities = col_possibilities[index]
-                    
-                # print(f"{'row' if item['type'] == ROW else 'col'}{index}: {info}, {len(possibilities)}")
-                # possibilities = self.ignore_impossible(possibilities, line)
+
                 absolute_answer = self.count_absolute_answer(possibilities)
                 if item["type"] == ROW:
                     self.board[index] = absolute_answer
                 else:
                     for i in range(self.row):
                         self.board[i][index] = absolute_answer[i]
-
-    def output(self):
-        self.print_board()
 
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
@@ -173,5 +163,5 @@ if __name__ == "__main__":
     _start = time.time()
     solver.solve()
     _end = time.time()
-    solver.output()
+    solver.print_board()
     print(f"time spent: {_end - _start}")
