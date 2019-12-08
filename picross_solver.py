@@ -23,10 +23,7 @@ class Solver:
     def print_board(self):
         for rows in self.board:
             for item in rows:
-                if item is None:
-                    print("N  ", end="")
-                else:
-                    print(f"{item:3}", end="")
+                print(f"{item if item == 1 else 0:3}", end="")
             print()
 
     def load_puzzle(self, file_path: str):
@@ -55,8 +52,7 @@ class Solver:
             for i in range(self.dim):
                 possibilities[i] = self.ignore_impossible(
                     possibilities[i], self.board[i])
-                tmp = self.count_absolute_answer(possibilities[i])
-                self.board[i] = tmp
+                self.board[i] = self.count_absolute_answer(possibilities[i])
             # compute col in next iteration
             self.transpose()
             possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
