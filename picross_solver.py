@@ -72,27 +72,19 @@ class Solver:
                 if item["type"] == ROW:
                     line = self.board[index]
                     info = self.row_info[index]
+                    p13s = row_possibilities
                 else:
                     line = [i[index] for i in self.board]
                     info = self.col_info[index]
+                    p13s = col_possibilities
 
                 if 0 not in line:
                     continue
 
-                if item["type"] == ROW:
-                    if row_possibilities[index] is None:
-                        row_possibilities[index] = self.gen_line(info, line)
-                    row_possibilities[index] = self.ignore_impossible(
-                        row_possibilities[index], line)
-                    possibilities = row_possibilities[index]
-                else:
-                    if col_possibilities[index] is None:
-                        col_possibilities[index] = self.gen_line(info, line)
-                    col_possibilities[index] = self.ignore_impossible(
-                        col_possibilities[index], line)
-                    possibilities = col_possibilities[index]
+                p13s[index] = p13s[index] or self.gen_line(info, line)
+                p13s[index] = self.ignore_impossible(p13s[index], line)
+                absolute_answer = self.count_absolute_answer(p13s[index])
 
-                absolute_answer = self.count_absolute_answer(possibilities)
                 if item["type"] == ROW:
                     self.board[index] = absolute_answer
                 else:
