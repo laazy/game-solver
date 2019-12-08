@@ -113,6 +113,6 @@ class Solver:
 
 if __name__ == "__main__":
     solver = Solver()
-    solver.load_puzzle("demo.txt")
+    solver.load_puzzle("6739.txt")
     solver.solve()
     solver.output()
