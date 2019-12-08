@@ -1,2 +1,2 @@
-# gamer-solver
+# game-solver
 solver of interesting games
