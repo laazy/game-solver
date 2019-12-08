@@ -89,13 +89,6 @@ class Solver:
 
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
-
-        def _gen(i):
-            ans = [-1] * i + [1] * ele
-            if i + ele < length:
-                ans.append(-1)
-            return ans
-
         if not info:
             return [[-1] * length]
         ele = info[0]
@@ -103,7 +96,7 @@ class Solver:
         for i in range(length - ele + 1):
             if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
-            header = _gen(i)
+            header = [-1] * i + [1] * ele + ([-1] if i + ele < length else [])
             if self.no_conflict(header, line[:len(header)]):
                 next_ans = self.gen_line(info[1:], line[len(header):])
                 ans.extend([header + j for j in next_ans])
