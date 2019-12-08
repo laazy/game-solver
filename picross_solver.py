@@ -6,6 +6,9 @@ import time
 Matrix = List[List[int]]
 Puzzle = List[Matrix]
 
+ROW = 0
+COL = 1
+
 
 class Solver:
     def __init__(self):
@@ -43,45 +46,94 @@ class Solver:
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
 
+    def cal_orders(self):
+        res = []
+        for index, row in enumerate(self.row_info):
+            res.append({
+                "type": ROW,
+                "index": index,
+                "score": sum(row) + len(row) - 1
+            })
+        for index, col in enumerate(self.col_info):
+            res.append({
+                "type": COL,
+                "index": index,
+                "score": sum(col) + len(col) - 1
+            })
+        res.sort(key=lambda item: item["score"], reverse=True)
+        # print(res)
+        return res
+
     def solve(self):
-        row_possibilities = [self.gen_line(i, self.dim) for i in self.row_info]
-        col_possibilities = [self.gen_line(i, self.dim) for i in self.col_info]
-        possibilities = row_possibilities
+        row_possibilities = [None] * self.col
+        col_possibilities = [None] * self.row
+
+        round_orders = self.cal_orders()
         while not self.matched():
-            # compute row
-            for i in range(self.dim):
-                possibilities[i] = self.ignore_impossible(
-                    possibilities[i], self.board[i])
-                self.board[i] = self.count_absolute_answer(possibilities[i])
-            # compute col in next iteration
-            self.transpose()
-            possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
-        if possibilities is col_possibilities:
-            self.transpose()
+            print("new round")
+            cnt = 0
+            for item in round_orders:
+                cnt += 1
+                print(cnt)
+                index = item["index"]
+                if item["type"] == ROW:
+                    line = self.board[index]
+                    info = self.row_info[index]
+                else:
+                    line = list(map(lambda l: l[index], self.board))
+                    info = self.col_info[index]
+
+                if 0 not in line:
+                    continue
+
+                if item["type"] == ROW:
+                    if row_possibilities[index] is None:
+                        row_possibilities[index] = self.gen_line(info, line)
+                    row_possibilities[index] = self.ignore_impossible(row_possibilities[index], line)
+                    possibilities = row_possibilities[index]
+                else:
+                    if col_possibilities[index] is None:
+                        col_possibilities[index] = self.gen_line(info, line)
+                    col_possibilities[index] = self.ignore_impossible(col_possibilities[index], line)
+                    possibilities = col_possibilities[index]
+                    
+                # print(f"{'row' if item['type'] == ROW else 'col'}{index}: {info}, {len(possibilities)}")
+                # possibilities = self.ignore_impossible(possibilities, line)
+                absolute_answer = self.count_absolute_answer(possibilities)
+                if item["type"] == ROW:
+                    self.board[index] = absolute_answer
+                else:
+                    for i in range(self.row):
+                        self.board[i][index] = absolute_answer[i]
 
     def output(self):
         self.print_board()
 
-    def gen_line(self, line: List, length: int) -> Matrix:
+    def gen_line(self, info: List, line: List) -> Matrix:
+        length = len(line)
+
         def _gen(i):
             ans = [-1] * i + [1] * ele
             if i + ele < length:
                 ans.append(-1)
             return ans
 
-        if not line:
+        if not info:
             return [[-1] * length]
-        ele = line[0]
+        ele = info[0]
         ans = []
         for i in range(length - ele + 1):
-            if sum(line[1:]) + len(line[1:]) - 1 > length - ele - i:
+            if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
-            next_ans = self.gen_line(line[1:], length - ele - i - 1)
-            ans.extend([_gen(i) + j for j in next_ans])
+            header = _gen(i)
+            if not self.no_conflict(header, line[:len(header)]):
+                continue
+            next_ans = self.gen_line(info[1:], line[len(header):])
+            ans.extend([header + j for j in next_ans])
         return ans
 
     def no_conflict(self, pos: List, row: List) -> bool:
-        for i in range(self.dim):
+        for i in range(len(pos)):
             if row[i] != 0 and pos[i] != row[i]:
                 return False
         return True
