@@ -3,158 +3,119 @@ from typing import List
 Matrix = List[List]
 Puzzle = List[Matrix]
 
-puzzle = [[
-    # top hint
-    [6, 5, 1, 2],
-    [9, 4, 2, 1],
-    [12, 3, 3, 1],
-    [13, 2, 3, 1],
-    [4, 3, 1, 3, 1],
 
-    [3, 2, 3, 5],
-    [5, 3, 4, 3],
-    [7, 4, 2],
-    [7, 1, 4, 2],
-    [7, 5, 1],
+class Solver:
+    def __init__(self):
+        self.puzzle_loaded = False
+        self.row = 0
+        self.col = 0
+        self.board: List[List(int)] = None
+        self.row_info = []
+        self.col_info = []
 
-    [5, 3, 1, 1],
-    [3, 5, 1, 1],
-    [5, 2],
-    [10, 1],
-    [10, 1, 2],
+    @staticmethod
+    def str_list_to_int_list(str_list: List[str]) -> List[int]:
+        return list(map(lambda item: int(item), str_list))
 
-    [7, 4, 2],
-    [6, 3, 4],
-    [8, 3, 2],
-    [14, 3, 3, 1],
-    [11, 4, 3, 1],
+    def print_board(self):
+        for rows in self.board:
+            for item in rows:
+                if item is None:
+                    print("N  ", end="")
+                else:
+                    print(f"{item:3}", end="")
+            print()
 
-    [8, 4, 2, 1, 1, 1],
-    [5, 3, 3],
-    [2, 2, 3, 2],
-    [2, 8, 1],
-    [12, 1]], [
-    # left hint
-    [4],
-    [3, 6],
-    [5, 7],
-    [2, 7, 7],
-    [2, 7, 8],
+    def load_puzzle(self, file_path: str):
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+        size_line = lines[0].split()
+        self.row = int(size_line[0])
+        self.col = int(size_line[1])
+        self.dim = self.row
+        self.board = [[None] * self.col for _ in range(self.row)]
+        row_info_line = lines[1].split(',')
+        self.row_info = list(map(lambda item: self.str_list_to_int_list(item.split()), row_info_line))
+        col_info_line = lines[2].split(',')
+        self.col_info = list(map(lambda item: self.str_list_to_int_list(item.split()), col_info_line))
+        assert self.row == len(self.row_info)
+        assert self.col == len(self.col_info)
+        # self.print_board()
+        # print(self.row_info)
+        # print(self.col_info)
 
-    [3, 7, 8],
-    [4, 5, 8],
-    [5, 3, 3, 4],
-    [5, 2, 2],
-    [5, 3, 2, 3],
-
-    [7, 3, 2, 4],
-    [4, 3, 4, 1, 1, 1],
-    [3, 2, 3, 2, 2, 2],
-    [3, 1, 4, 2, 5],
-    [1, 3, 2, 2, 2, 5],
-
-    [2, 3, 3, 1, 2, 2],
-    [3, 2, 2, 2, 2, 4],
-    [4, 2, 2, 1, 7],
-    [5, 1, 2, 2, 7],
-    [1, 4, 2, 2],
-
-    [7, 1, 4, 1],
-    [5, 5, 2],
-    [5, 11],
-    [1, 4, 3],
-    [13, 3]]]
-
-answer = [
-    [0, 1, 0, 1, 0],
-    [1, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1],
-    [0, 1, 1, 1, 0],
-    [0, 0, 1, 0, 0]
-]
-
-dim = len(puzzle[0])
+    def solve(self):
+        row_possibilities = [self.gen_line(i, self.dim) for i in self.row_info]
+        col_possibilities = [self.gen_line(i, self.dim) for i in self.col_info]
+        possibilities = row_possibilities
+        while not self.matched():
+            # compute row
+            for i in range(self.dim):
+                possibilities[i] = self.ignore_impossible(
+                    possibilities[i], self.board[i])
+                self.board[i] = self.count_absolute_answer(possibilities[i])
+            # compute col in next iteration
+            self.transpose()
+            possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
+        if possibilities is col_possibilities:
+            transpose(board)
 
 
-def gen_line(line: List, length: int) -> Matrix:
-    def _gen(i):
-        ans = [0] * i + [1] * ele
-        if i + ele < length:
-            ans.append(0)
+    def output(self):
+        self.print_board()
+
+    def gen_line(self, line: List, length: int) -> Matrix:
+        def _gen(i):
+            ans = [0] * i + [1] * ele
+            if i + ele < length:
+                ans.append(0)
+            return ans
+
+        if not line:
+            return [[0] * length]
+        ele = line[0]
+        ans = []
+        for i in range(length - ele + 1):
+            if sum(line[1:]) + len(line[1:]) - 1 > length - ele - i:
+                break
+            next_ans = self.gen_line(line[1:], length - ele - i - 1)
+            ans.extend([_gen(i) + j for j in next_ans])
         return ans
 
-    if not line:
-        return [[0] * length]
-    ele = line[0]
-    ans = []
-    for i in range(length - ele + 1):
-        if sum(line[1:]) + len(line[1:]) - 1 > length - ele - i:
-            break
-        next_ans = gen_line(line[1:], length - ele - i - 1)
-        ans.extend([_gen(i) + j for j in next_ans])
-    return ans
+    def no_conflict(self, pos: List, row: List) -> bool:
+        for i in range(self.dim):
+            if row[i] is not None and pos[i] != row[i]:
+                return False
+        return True
 
+    def ignore_impossible(self, possibility: Matrix, row: List) -> Matrix:
+        ans = []
+        for i in possibility:
+            if self.no_conflict(i, row):
+                ans.append(i)
+        return ans
 
-def generate_all_possible(row_puzzle: Matrix) -> List[Matrix]:
-    return [gen_line(i, dim) for i in row_puzzle]
+    def count_absolute_answer(self, possibility: Matrix) -> List:
+        ans = []
+        count_table = {0: 0, len(possibility): 1}
+        for i in zip(*possibility):
+            ans.append(count_table.get(sum(i), None))
+        return ans
 
+    def matched(self) -> bool:
+        for i in self.board:
+            if None in i:
+                return False
+        return True
 
-def no_conflict(pos: List, row: List) -> bool:
-    for i in range(dim):
-        if row[i] is not None and pos[i] != row[i]:
-            return False
-    return True
-
-
-def ignore_impossible(possibility: Matrix, row: List) -> Matrix:
-    ans = []
-    for i in possibility:
-        if no_conflict(i, row):
-            ans.append(i)
-    return ans
-
-
-def count_absolute_answer(possibility: Matrix) -> List:
-    ans = []
-    count_table = {0: 0, len(possibility): 1}
-    for i in zip(*possibility):
-        ans.append(count_table.get(sum(i), None))
-    return ans
-
-
-def matched(board: Matrix) -> bool:
-    for i in board:
-        if None in i:
-            return False
-    return True
-
-
-def transpose(board: Matrix) -> None:
-    for i in range(dim):
-        for j in range(i, dim):
-            board[i][j],  board[j][i] = board[j][i], board[i][j]
-
-
-def main():
-    board = [[None] * dim for _ in range(dim)]
-    row_possibilities = generate_all_possible(puzzle[1])
-    col_possibilities = generate_all_possible(puzzle[0])
-    possibilities = row_possibilities
-    while not matched(board):
-        # compute row
-        for i in range(dim):
-            possibilities[i] = ignore_impossible(
-                possibilities[i], board[i])
-            board[i] = count_absolute_answer(possibilities[i])
-        # compute col in next iteration
-        transpose(board)
-        possibilities = row_possibilities if possibilities is col_possibilities else col_possibilities
-    if possibilities is col_possibilities:
-        transpose(board)
-    return board
+    def transpose(self) -> None:
+        for i in range(self.dim):
+            for j in range(i, self.dim):
+                self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
 
 
 if __name__ == "__main__":
-    board = main()
-    for i in board:
-        print(i)
+    solver = Solver()
+    solver.load_puzzle("demo.txt")
+    solver.solve()
+    solver.output()
