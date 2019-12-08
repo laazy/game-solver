@@ -63,11 +63,7 @@ class Solver:
 
         round_orders = self.cal_orders()
         while not self.matched():
-            print("new round")
-            cnt = 0
             for item in round_orders:
-                cnt += 1
-                print(cnt)
                 index = item["index"]
                 if item["type"] == ROW:
                     line = self.board[index]
@@ -121,29 +117,14 @@ class Solver:
         return True
 
     def ignore_impossible(self, possibility: Matrix, row: List) -> Matrix:
-        ans = []
-        for i in possibility:
-            if self.no_conflict(i, row):
-                ans.append(i)
-        return ans
+        return [i for i in possibility if self.no_conflict(i, row)]
 
     def count_absolute_answer(self, possibility: Matrix) -> List:
-        ans = []
         count_table = {-len(possibility): -1, len(possibility): 1}
-        for i in zip(*possibility):
-            ans.append(count_table.get(sum(i), 0))
-        return ans
+        return [count_table.get(sum(i), 0) for i in zip(*possibility)]
 
     def matched(self) -> bool:
-        for i in self.board:
-            if 0 in i:
-                return False
-        return True
-
-    def transpose(self) -> None:
-        for i in range(self.dim):
-            for j in range(i, self.dim):
-                self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
+        return all([all(i) for i in self.board])
 
 
 if __name__ == "__main__":
