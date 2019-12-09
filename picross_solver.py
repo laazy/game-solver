@@ -4,7 +4,6 @@ import sys
 import time
 
 Matrix = List[List[int]]
-Puzzle = List[Matrix]
 
 ROW = 0
 COL = 1
@@ -15,7 +14,7 @@ class Solver:
         self.puzzle_loaded = False
         self.row = 0
         self.col = 0
-        self.board: List[List(int)] = None
+        self.board: List[List[int]] = None
         self.row_info = []
         self.col_info = []
 
@@ -26,14 +25,13 @@ class Solver:
     def print_board(self):
         for rows in self.board:
             for item in rows:
-                print(f"{item if item == 1 else 0:3}", end="")
+                print(f"{item if item == 1 else 0 if item == -1 else 'N':>3}", end="")
             print()
 
     def load_puzzle(self, file_path: str):
         with open(file_path, 'r') as f:
             lines = f.readlines()
         self.row, self.col = (int(i) for i in lines[0].strip().split())
-        self.dim = self.row
         self.board = [[0] * self.col for _ in range(self.row)]
         self.col_info = self.str_to_hint_matrix(lines[1])
         self.row_info = self.str_to_hint_matrix(lines[2])
@@ -55,95 +53,64 @@ class Solver:
                 "score": sum(col) + len(col) - 1
             })
         res.sort(key=lambda item: item["score"], reverse=True)
-        return res
+        return cycle(res)
 
     def solve(self):
-        row_possibilities = [None] * self.col
-        col_possibilities = [None] * self.row
-
+        row_p13s, col_p13s = [None] * self.col, [None] * self.row
         round_orders = self.cal_orders()
-        while not self.matched():
-            print("new round")
-            cnt = 0
-            for item in round_orders:
-                cnt += 1
-                print(cnt)
-                index = item["index"]
-                if item["type"] == ROW:
-                    line = self.board[index]
-                    info = self.row_info[index]
-                    p13s = row_possibilities
-                else:
-                    line = [i[index] for i in self.board]
-                    info = self.col_info[index]
-                    p13s = col_possibilities
+        for item in round_orders:
+            index = item["index"]
+            if item["type"] == ROW:
+                line = self.board[index]
+                info = self.row_info[index]
+                p13s = row_p13s
+            else:
+                line = [i[index] for i in self.board]
+                info = self.col_info[index]
+                p13s = col_p13s
 
-                if 0 not in line:
-                    continue
+            if 0 not in line:
+                continue
 
-                p13s[index] = p13s[index] or self.gen_line(info, line)
-                p13s[index] = self.ignore_impossible(p13s[index], line)
-                absolute_answer = self.count_absolute_answer(p13s[index])
+            p13s[index] = p13s[index] or self.gen_line(info, line)
+            p13s[index] = self.ignore_impossible(p13s[index], line)
+            absolute_answer = self.count_absolute_answer(p13s[index])
 
-                if item["type"] == ROW:
-                    self.board[index] = absolute_answer
-                else:
-                    for i in range(self.row):
-                        self.board[i][index] = absolute_answer[i]
+            if item["type"] == ROW:
+                self.board[index] = absolute_answer
+            else:
+                for i in range(self.row):
+                    self.board[i][index] = absolute_answer[i]
+            if self.matched():
+                break
 
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
-
-        def _gen(i):
-            ans = [-1] * i + [1] * ele
-            if i + ele < length:
-                ans.append(-1)
-            return ans
-
         if not info:
-            return [[-1] * length]
+            return [[-1] * length] if 1 not in line else None
         ele = info[0]
         ans = []
         for i in range(length - ele + 1):
             if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
-            header = _gen(i)
-            if not self.no_conflict(header, line[:len(header)]):
-                continue
-            next_ans = self.gen_line(info[1:], line[len(header):])
-            ans.extend([header + j for j in next_ans])
+            header = [-1] * i + [1] * ele + ([-1] if i + ele < length else [])
+            if self.no_conflict(header, line[:len(header)]):
+                next_ans = self.gen_line(info[1:], line[len(header):])
+                ans.extend([header + j for j in next_ans or []])
         return ans
 
     def no_conflict(self, pos: List, row: List) -> bool:
-        for i in range(len(pos)):
-            if row[i] != 0 and pos[i] != row[i]:
-                return False
-        return True
+        return all([i*j != -1 for i, j in zip(pos, row)])
 
     def ignore_impossible(self, possibility: Matrix, row: List) -> Matrix:
-        ans = []
-        for i in possibility:
-            if self.no_conflict(i, row):
-                ans.append(i)
-        return ans
+        return [i for i in possibility if self.no_conflict(i, row)]
 
     def count_absolute_answer(self, possibility: Matrix) -> List:
-        ans = []
         count_table = {-len(possibility): -1, len(possibility): 1}
-        for i in zip(*possibility):
-            ans.append(count_table.get(sum(i), 0))
-        return ans
+        return [count_table.get(sum(i), 0) for i in zip(*possibility)]
 
     def matched(self) -> bool:
-        for i in self.board:
-            if 0 in i:
-                return False
-        return True
-
-    def transpose(self) -> None:
-        for i in range(self.dim):
-            for j in range(i, self.dim):
-                self.board[i][j],  self.board[j][i] = self.board[j][i], self.board[i][j]
+        return all([all(i) for i in self.board])
 
 
 if __name__ == "__main__":
