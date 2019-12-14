@@ -9,6 +9,9 @@ rope = "*"
 pylint = "*"
 
 [packages]
+tensorflow = "*"
+pillow = "*"
+numpy = "*"
 
 [requires]
 python_version = "3.7"
