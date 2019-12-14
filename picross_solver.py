@@ -14,12 +14,12 @@ class Solver:
         self.puzzle_loaded = False
         self.row = 0
         self.col = 0
-        self.board: List[List[int]] = None
+        self.board: List[List[int]] = []
         self.row_info = []
         self.col_info = []
 
     @staticmethod
-    def str_to_hint_matrix(s: str) -> List[int]:
+    def str_to_hint_matrix(s: str) -> List[List[int]]:
         return [[int(j) for j in i.split()] for i in s.split(',')]
 
     def print_board(self):
@@ -87,25 +87,27 @@ class Solver:
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
         if not info:
-            return [[-1] * length] if 1 not in line else None
+            return [[-1] * length] if 1 not in line else []
         ele = info[0]
-        ans = []
+        ans: Matrix = []
         for i in range(length - ele + 1):
             if sum(info[1:]) + len(info[1:]) - 1 > length - ele - i:
                 break
             header = [-1] * i + [1] * ele + ([-1] if i + ele < length else [])
             if self.no_conflict(header, line[:len(header)]):
                 next_ans = self.gen_line(info[1:], line[len(header):])
-                ans.extend([header + j for j in next_ans or []])
+                ans.extend([header + j for j in next_ans])
         return ans
 
-    def no_conflict(self, pos: List, row: List) -> bool:
-        return all([i*j != -1 for i, j in zip(pos, row)])
+    @staticmethod
+    def no_conflict(pos: List, row: List) -> bool:
+        return all(i*j != -1 for i, j in zip(pos, row))
 
     def ignore_impossible(self, possibility: Matrix, row: List) -> Matrix:
         return [i for i in possibility if self.no_conflict(i, row)]
 
-    def count_absolute_answer(self, possibility: Matrix) -> List:
+    @staticmethod
+    def count_absolute_answer(possibility: Matrix) -> List:
         count_table = {-len(possibility): -1, len(possibility): 1}
         return [count_table.get(sum(i), 0) for i in zip(*possibility)]
 
