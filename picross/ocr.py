@@ -125,7 +125,6 @@ def main():
         row = []
         while len(i) != 0:
             num = i[0]
-            t = _unpack(num)
             num_img = [side.crop(_unpack(num))]
             if is_single(num_img[0]):
                 num_img.append(side.crop(_unpack(i[1])))
@@ -134,9 +133,11 @@ def main():
             i = i[1:]
         ans.append(row)
 
-    images = [pad_image(i) for i in ans[0][0]]
+    # images = [pad_image(i) for i in ans[0][0]]
+    images = [pad_image(j) for i in _unpack(ans) for j in i]
     images = np.asarray([np.asfarray(i) / 255 for i in images])
-    result = recognize(images)
+
+    result = Recognizer().predict(images)
     print(result)
 
 
