@@ -1,10 +1,12 @@
 import tensorflow as tf
 from tensorflow import keras
 
-# Helper libraries
+# # Helper libraries
 import numpy as np
 import math
 import pathlib as path
+from PIL import Image
+import random
 
 print(tf.__version__)
 
@@ -13,28 +15,73 @@ print(tf.__version__)
 MODEL_FILE = "mnist.h5"
 
 
+def pre_process():
+    def _process(p):
+        return np.asfarray(Image.open(
+            p).resize((28, 28), Image.BICUBIC).convert('L').point(lambda x: 255 - x)) / 255
+
+    root_dir = path.Path("English")
+    train_dir = [i for i in root_dir.iterdir()
+                 if i.name.startswith("Sample")]
+    test_dir = [i for i in root_dir.iterdir()
+                if i.name.startswith("Test")]
+
+    sorted(train_dir)
+    sorted(test_dir)
+
+    test_data = [[_process(str(j)) for j in i.iterdir()] for i in test_dir]
+    train_data = [[_process(str(j)) for j in i.iterdir()] for i in train_dir]
+
+    return train_data, test_data
+
+
 def build():
     # Download MNIST dataset.
-    mnist = keras.datasets.mnist
-    (train_images, train_labels), (test_images, test_labels) = mnist.load_data()
+    # dataset = keras.datasets.mnist
+    # (train_images, train_labels), (test_images, test_labels) = dataset.load_data()
 
-    # If you can't download the MNIST dataset from Keras, please try again with an alternative method below
-    # path = keras.utils.get_file('mnist.npz',
-    #                             origin='https://s3.amazonaws.com/img-datasets/mnist.npz',
-    #                             file_hash='8a61469f7ea1b51cbae51d4f78837e45')
-    # with np.load(path, allow_pickle=True) as f:
-    #   train_images, train_labels = f['x_train'], f['y_train']
-    #   test_images, test_labels = f['x_test'], f['y_test']
+    # # If you can't download the MNIST dataset from Keras, please try again with an alternative method below
+    # # path = keras.utils.get_file('mnist.npz',
+    # #                             origin='https://s3.amazonaws.com/img-datasets/mnist.npz',
+    # #                             file_hash='8a61469f7ea1b51cbae51d4f78837e45')
+    # # with np.load(path, allow_pickle=True) as f:
+    # #   train_images, train_labels = f['x_train'], f['y_train']
+    # #   test_images, test_labels = f['x_test'], f['y_test']
 
-    # Normalize the input image so that each pixel value is between 0 to 1.
-    train_images = train_images / 255.0
-    test_images = test_images / 255.0
+    # # Normalize the input image so that each pixel value is between 0 to 1.
+    # train_images = train_images / 255.0
+    # test_images = test_images / 255.0
 
     # Show the first 25 images in the training dataset.
     # show_sample(train_images,
     #             ['Label: %s' % label for label in train_labels])
 
+    train_data, test_data = pre_process()
+
+    train_labels = [i for i in range(len(train_data))
+                    for j in train_data[i]]
+    test_labels = [i for i in range(len(test_data))
+                   for j in test_data[i]]
+
+    train_data = [j for i in train_data for j in i]
+    test_data = [j for i in test_data for j in i]
+
+    test_dl = list(zip(test_data, test_labels))
+    train_dl = list(zip(train_data, train_labels))
+
+    random.shuffle(test_dl)
+    random.shuffle(train_dl)
+
+    test_data, test_labels = zip(*test_dl)
+    train_data, train_labels = zip(*train_dl)
+
+    test_data = np.asarray(test_data)
+    test_labels = np.asarray(test_labels)
+    train_data = np.asarray(train_data)
+    train_labels = np.asarray(train_labels)
+
     # Define the model architecture
+
     model = keras.Sequential([
         keras.layers.Flatten(input_shape=(28, 28)),
         keras.layers.Dense(128, activation=tf.nn.relu),
@@ -57,15 +104,15 @@ def build():
                   metrics=['accuracy'])
 
     # Train the digit classification model
-    model.fit(train_images, train_labels, epochs=5)
+    model.fit(train_data, train_labels, epochs=5)
 
     # Evaluate the model using test dataset.
-    test_loss, test_acc = model.evaluate(test_images, test_labels)
+    test_loss, test_acc = model.evaluate(test_data, test_labels)
 
     print('Test accuracy:', test_acc)
 
     # Predict the labels of digit images in our test dataset.
-    predictions = model.predict(test_images)
+    # predictions = model.predict(test_data)
 
     # Then plot the first 25 test images and their predicted labels.
     # show_sample(test_images,
@@ -80,6 +127,16 @@ def recognize(images) -> int:
     model = keras.models.load_model(MODEL_FILE)
     predictions = model.predict(images)
     return [np.argmax(result) for result in predictions]
+
+class Recognizer:
+    def __init__(self):
+        if not path.Path(MODEL_FILE).exists():
+            build()
+        self.model = keras.models.load_model(MODEL_FILE)
+
+    def predict(self, images):
+        predictions = self.model.predict(images)
+        return [np.argmax(result) for result in predictions]
 
 
 if __name__ == "__main__":

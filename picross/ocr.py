@@ -4,7 +4,7 @@ from PIL import Image
 import colorsys
 import numpy as np
 
-from recognize import recognize
+from recognize import Recognizer
 
 
 def pad_image(image):
@@ -134,15 +134,8 @@ def main():
             i = i[1:]
         ans.append(row)
 
-    # for i in ans[0]:
-    #     for j in i:
-    #         j.show()
-    #     print()
     images = [pad_image(i) for i in ans[0][0]]
-    images[0].show()
     images = np.asarray([np.asfarray(i) / 255 for i in images])
-    # for i in range(len(images)):
-    #     np.reshape(images[i], ( 28, 28, 3))
     result = recognize(images)
     print(result)
 
