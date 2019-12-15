@@ -2,6 +2,28 @@ from itertools import product
 
 from PIL import Image
 import colorsys
+import numpy as np
+
+from recognize import recognize
+
+
+def pad_image(image):
+    iw, ih = image.size  # 原始图像的尺寸
+    w, h = 28, 28  # 目标图像的尺寸
+    scale = min(float(w) / float(iw), float(h) / float(ih))  # 转换的最小比例
+
+    # 保证长或宽，至少一个符合目标图像的尺寸
+    # nw = int(iw * scale)
+    # nh = int(ih * scale)
+
+    # image = image.resize((nw, nh), Image.BICUBIC)  # 缩小图像
+    # image.show()
+    new_image = Image.new('L', (28, 28), (0))  # 生成灰色图像
+    # 将图像填充为中间图像，两侧为灰色的样式
+    new_image.paste(image, ((w - iw) // 2, (h - ih) // 2))
+    # new_image.show()
+
+    return new_image  # .convert("RGB")
 
 
 CONFIG = {
@@ -112,10 +134,17 @@ def main():
             i = i[1:]
         ans.append(row)
 
-    for i in ans[0]:
-        for j in i:
-            j.show()
-        print()
+    # for i in ans[0]:
+    #     for j in i:
+    #         j.show()
+    #     print()
+    images = [pad_image(i) for i in ans[0][0]]
+    images[0].show()
+    images = np.asarray([np.asfarray(i) / 255 for i in images])
+    # for i in range(len(images)):
+    #     np.reshape(images[i], ( 28, 28, 3))
+    result = recognize(images)
+    print(result)
 
 
 if __name__ == "__main__":
