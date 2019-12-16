@@ -36,26 +36,6 @@ def pre_process():
 
 
 def build():
-    # Download MNIST dataset.
-    # dataset = keras.datasets.mnist
-    # (train_images, train_labels), (test_images, test_labels) = dataset.load_data()
-
-    # # If you can't download the MNIST dataset from Keras, please try again with an alternative method below
-    # # path = keras.utils.get_file('mnist.npz',
-    # #                             origin='https://s3.amazonaws.com/img-datasets/mnist.npz',
-    # #                             file_hash='8a61469f7ea1b51cbae51d4f78837e45')
-    # # with np.load(path, allow_pickle=True) as f:
-    # #   train_images, train_labels = f['x_train'], f['y_train']
-    # #   test_images, test_labels = f['x_test'], f['y_test']
-
-    # # Normalize the input image so that each pixel value is between 0 to 1.
-    # train_images = train_images / 255.0
-    # test_images = test_images / 255.0
-
-    # Show the first 25 images in the training dataset.
-    # show_sample(train_images,
-    #             ['Label: %s' % label for label in train_labels])
-
     train_data, test_data = pre_process()
 
     train_labels = [i for i in range(len(train_data))
@@ -84,17 +64,19 @@ def build():
 
     model = keras.Sequential([
         keras.layers.Flatten(input_shape=(28, 28)),
-        keras.layers.Dense(128, activation=tf.nn.relu),
+        # keras.layers.Dense(128, activation=tf.nn.relu),
 
         # Optional: You can replace the dense layer above with the convolution layers below to get higher accuracy.
-        # keras.layers.Reshape(target_shape=(28, 28, 1)),
-        # keras.layers.Conv2D(filters=32, kernel_size=(3, 3), activation=tf.nn.relu),
-        # keras.layers.Conv2D(filters=64, kernel_size=(3, 3), activation=tf.nn.relu),
-        # keras.layers.MaxPooling2D(pool_size=(2, 2)),
-        # keras.layers.Dropout(0.25),
-        # keras.layers.Flatten(input_shape=(28, 28)),
-        # keras.layers.Dense(128, activation=tf.nn.relu),
-        # keras.layers.Dropout(0.5),
+        keras.layers.Reshape(target_shape=(28, 28, 1)),
+        keras.layers.Conv2D(filters=32, kernel_size=(3, 3),
+                            activation=tf.nn.relu),
+        keras.layers.Conv2D(filters=64, kernel_size=(3, 3),
+                            activation=tf.nn.relu),
+        keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        keras.layers.Dropout(0.25),
+        keras.layers.Flatten(input_shape=(28, 28)),
+        keras.layers.Dense(128, activation=tf.nn.relu),
+        keras.layers.Dropout(0.5),
 
         keras.layers.Dense(10, activation=tf.nn.softmax)
     ])
@@ -127,6 +109,7 @@ def recognize(images) -> int:
     model = keras.models.load_model(MODEL_FILE)
     predictions = model.predict(images)
     return [np.argmax(result) for result in predictions]
+
 
 class Recognizer:
     def __init__(self):
