@@ -2,6 +2,10 @@
 .vscode/
 .idea/
 
+# dataset
+English/
+EnglishFnt.tgz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
