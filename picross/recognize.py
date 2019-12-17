@@ -26,8 +26,8 @@ def pre_process():
     test_dir = [i for i in root_dir.iterdir()
                 if i.name.startswith("Test")]
 
-    sorted(train_dir)
-    sorted(test_dir)
+    train_dir.sort()
+    test_dir.sort()
 
     test_data = [[_process(str(j)) for j in i.iterdir()] for i in test_dir]
     train_data = [[_process(str(j)) for j in i.iterdir()] for i in train_dir]
