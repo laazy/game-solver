@@ -28,7 +28,7 @@ class Solver:
                 print(f"{item if item == 1 else 0 if item == -1 else 'N':>3}", end="")
             print()
 
-    def load_puzzle(self, file_path: str):
+    def load_puzzle_from_file(self, file_path: str):
         with open(file_path, 'r') as f:
             lines = f.readlines()
         self.row, self.col = (int(i) for i in lines[0].strip().split())
@@ -37,6 +37,12 @@ class Solver:
         self.row_info = self.str_to_hint_matrix(lines[2])
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
+
+    def load_puzzle(self, col_info, row_info):
+        self.row, self.col = len(row_info), len(col_info)
+        self.board = [[0] * self.col for _ in range(self.row)]
+        self.col_info = col_info
+        self.row_info = row_info
 
     def cal_orders(self):
         res = []
@@ -120,7 +126,7 @@ if __name__ == "__main__":
         print("You must specify file name")
         exit(-1)
     solver = Solver()
-    solver.load_puzzle(sys.argv[1])
+    solver.load_puzzle_from_file(sys.argv[1])
     _start = time.time()
     solver.solve()
     _end = time.time()
