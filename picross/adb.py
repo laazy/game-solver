@@ -21,13 +21,12 @@ CONFIG = {
     }
 }
 
-ADB = r"D:\Util\platform-tools\adb.exe"
-DST_IMAGE = r"D:\projects\gamer-solver\image.png"
+ADB = "adb"
 
 
-def get_image():
+def take_screenshot(img_path):
     os.system(f"{ADB} shell screencap -p /sdcard/game-solver-image.png")
-    os.system(f"{ADB} pull /sdcard/game-solver-image.png {DST_IMAGE}")
+    os.system(f"{ADB} pull /sdcard/game-solver-image.png {img_path}")
 
 
 def swipe(size, row, col_begin, length):
@@ -44,18 +43,17 @@ def swipe(size, row, col_begin, length):
             f"{ADB} shell input swipe {x} {y} {x + (length - 1) * grid_size} {y}")
 
 
+def simulate_touch(board):
+    dim = len(board)
+    for i, row in enumerate(board):
+        grouped_row = [(x, len(list(g))) for x, g in groupby(row)]
+        print(grouped_row)
+        col_begin = 0
+        for value, cnt in grouped_row:
+            if value == 1:
+                swipe(dim, i, col_begin, cnt)
+            col_begin += cnt
+
+
 if __name__ == '__main__':
-    # solver = Solver()
-    # solver.load_puzzle("picross/puzzles/simple.txt")
-    # solver.solve()
-    # board = solver.board
-    # for i, row in enumerate(board):
-    #     grouped_row = [(x, len(list(g))) for x, g in groupby(row)]
-    #     print(grouped_row)
-    #     col_begin = 0
-    #     for value, cnt in grouped_row:
-    #         if value == 1:
-    #             swipe(solver.row, i, col_begin, cnt)
-    #         col_begin += cnt
-    get_image()
     pass

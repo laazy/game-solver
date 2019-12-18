@@ -71,10 +71,10 @@ def is_single(num_img) -> bool:
     return True
 
 
-def main():
-    config = CONFIG["25"]
+def crop_picture(pic_path: str, size: int):
+    config = CONFIG[str(size)]
     side_box = (*config["side"]["start"], *config["side"]["end"])
-    im = Image.open("images/25x25_1.png")
+    im = Image.open(pic_path)
     # dst = im.convert('L').point(lambda x: 255 if x > 80 else 0, mode='1')
     side = im.crop(side_box)
     bin_side = side.convert('L').point(
@@ -129,16 +129,16 @@ def main():
             i = i[1:]
         ans.append(row)
 
-    # images = [pad_image(i) for i in ans[0][0]]
     images = [pad_image(j) for i in _unpack(ans) for j in i]
+    return images
     # images = np.asarray([np.asfarray(i) / 255 for i in images])
 
     # result = Recognizer().predict(images)
     # print(result)
-    dc = DiffClassifier("diff_model")
-    for img in images:
-        print(dc.predict_from_np(img))
+    # dc = DiffClassifier("diff_model")
+    # for img in images:
+    #     print(dc.predict_from_np(img))
 
 
 if __name__ == "__main__":
-    main()
+    crop_picture("images/25x25_1.png", 25)
