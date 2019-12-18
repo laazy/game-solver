@@ -4,26 +4,22 @@ from PIL import Image
 import colorsys
 import numpy as np
 
-from recognize import Recognizer
+# from recognize import Recognizer
+from diff_classifier import DiffClassifier, Model
 
 
 def pad_image(image):
-    iw, ih = image.size  # 原始图像的尺寸
-    w, h = 28, 28  # 目标图像的尺寸
-    scale = min(float(w) / float(iw), float(h) / float(ih))  # 转换的最小比例
+    iw, ih = image.size
+    w, h = 28, 28
+    scale = min(float(w) / float(iw), float(h) / float(ih))
+    nw, nh = int(iw * scale), int(ih * scale)
 
-    # 保证长或宽，至少一个符合目标图像的尺寸
-    # nw = int(iw * scale)
-    # nh = int(ih * scale)
+    image = image.resize((nw, nh), Image.BICUBIC)
+    image = image.convert('L').point(lambda x: 0 if x < 140 else 1, mode='1')
 
-    # image = image.resize((nw, nh), Image.BICUBIC)  # 缩小图像
-    # image.show()
-    new_image = Image.new('L', (28, 28), (0))  # 生成灰色图像
-    # 将图像填充为中间图像，两侧为灰色的样式
-    new_image.paste(image, ((w - iw) // 2, (h - ih) // 2))
-    # new_image.show()
-
-    return new_image  # .convert("RGB")
+    new_image = Image.new('L', (28, 28), (0))
+    new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
+    return new_image
 
 
 CONFIG = {
@@ -78,7 +74,7 @@ def is_single(num_img) -> bool:
 def main():
     config = CONFIG["25"]
     side_box = (*config["side"]["start"], *config["side"]["end"])
-    im = Image.open("image.png")
+    im = Image.open("images/25x25_1.png")
     # dst = im.convert('L').point(lambda x: 255 if x > 80 else 0, mode='1')
     side = im.crop(side_box)
     bin_side = side.convert('L').point(
@@ -135,10 +131,13 @@ def main():
 
     # images = [pad_image(i) for i in ans[0][0]]
     images = [pad_image(j) for i in _unpack(ans) for j in i]
-    images = np.asarray([np.asfarray(i) / 255 for i in images])
+    # images = np.asarray([np.asfarray(i) / 255 for i in images])
 
-    result = Recognizer().predict(images)
-    print(result)
+    # result = Recognizer().predict(images)
+    # print(result)
+    dc = DiffClassifier("diff_model")
+    for img in images:
+        print(dc.predict_from_np(img))
 
 
 if __name__ == "__main__":
