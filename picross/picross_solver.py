@@ -38,6 +38,16 @@ class Solver:
         assert self.row == len(self.row_info)
         assert self.col == len(self.col_info)
 
+    def dump_puzzle_to_file(self, file_path: str):
+        with open(file_path, "w") as f:
+            f.write(f"{self.row} {self.col}\n")
+            col_info_str = [" ".join([str(i) for i in item]) for item in self.col_info]
+            row_info_str = [" ".join([str(i) for i in item]) for item in self.row_info]
+            f.write(", ".join(col_info_str))
+            f.write("\n")
+            f.write(", ".join(row_info_str))
+            f.write("\n")
+
     def load_puzzle(self, col_info, row_info):
         self.row, self.col = len(row_info), len(col_info)
         self.board = [[0] * self.col for _ in range(self.row)]
