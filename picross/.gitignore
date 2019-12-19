@@ -3,6 +3,7 @@ Cropped_Number_yfzm/
 Classify/
 Classified_Result/
 yfzm_result/
+tmp/
 
 *.ipynb
 *.zip
