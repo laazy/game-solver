@@ -1,7 +1,7 @@
-from .adb import take_screenshot, simulate_touch
-from .ocr import crop_picture
-from .diff_classifier import DiffClassifier, Model
-from .picross_solver import Solver
+from adb import take_screenshot, simulate_touch
+from yfzm_ocr import crop_picture
+from diff_classifier import DiffClassifier, Model
+from picross_solver import Solver
 
 
 def get_info(dc: DiffClassifier, pics):
@@ -17,12 +17,11 @@ def get_info(dc: DiffClassifier, pics):
 
 
 def main():
-    screenshot = "tmp/image.png"
+    screenshot = "picross/tmp/image.png"
     take_screenshot(screenshot)
-
     row_pics, col_pics = crop_picture(screenshot, 25)
 
-    dc = DiffClassifier("diff_model")
+    dc = DiffClassifier("picross/diff_model")
     row_info, col_info = get_info(dc, row_pics), get_info(dc, col_pics)
 
     solver = Solver()
@@ -30,3 +29,6 @@ def main():
     solver.solve()
 
     simulate_touch(solver.board)
+
+if __name__ == "__main__":
+    main()

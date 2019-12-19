@@ -22,18 +22,42 @@ def pad_image(image):
     return new_image
 
 
+def draw_box(px, p1, p2):
+    lx, ly = p1
+    rx, ry = p2
+    for i in range(lx, rx):
+        px[i, ly] = (255, 255, 255, 255)
+        px[i, ry] = (255, 255, 255, 255)
+    for i in range(ly, ry):
+        px[lx, i] = (255, 255, 255, 255)
+        px[rx, i] = (255, 255, 255, 255)
+
+
 CONFIG = {
     "25": {
         "side": {
-            "start": (0, 500),
-            "end": (215, 1352)
+            "start": (0, 626),
+            "end": (215, 1478)
         },
         "top": {
-            "start": (215, 225),
-            "end": (1065, 500)
+            "start": (219, 340),
+            "end": (1072, 621)
         }
     }
 }
+
+# CONFIG = {
+#     "25": {
+#         "side": {
+#             "start": (0, 500),
+#             "end": (215, 1352)
+#         },
+#         "top": {
+#             "start": (215, 225),
+#             "end": (1065, 500)
+#         }
+#     }
+# }
 
 
 class PicInfo:
@@ -86,12 +110,13 @@ def is_pixel_yellow(pixel):
         "grey": (127, 127, 127),
         "white": (255, 255, 255),
         "yellow": (255,255,0),
+        "light_yellow": (127, 127, 0)
     }
     manhattan = lambda x,y : abs(x[0] - y[0]) + abs(x[1] - y[1]) + abs(x[2] - y[2])
     distances = {k: manhattan(v, pixel) for k, v in colors.items()}
     color = min(distances, key=distances.get)
     # print(f"debug: {pixel}: {color}")
-    return color == "yellow"
+    return color == "yellow" or color == "light_yellow"
 
 
 def get_all_pics(origin_pic: Image, row_height: int) -> List[List[PicInfo]]:
@@ -107,6 +132,7 @@ def get_all_pics(origin_pic: Image, row_height: int) -> List[List[PicInfo]]:
         while x < x_len:
             if px[x, y_mid]:
                 num_box = find_area((x, y_mid), bin_pic)
+                draw_box(opx, (num_box[0], num_box[1]), (num_box[2], num_box[3]))
                 row_pics.append(PicInfo(
                     img=pad_image(origin_pic.crop(num_box)),
                     x_mid=(num_box[2] + num_box[0]) // 2,
@@ -174,14 +200,18 @@ def crop_picture(image_name: str, dim: int):
     top_x = (top_box[2] - top_box[0]) // dim
 
     all_side_pics = get_all_pics(side, side_y)
-    all_top_pics = get_all_pics(top, 27)
+    all_top_pics = get_all_pics(top, 28)
+
+    # side.show()
+    # top.show()
+    # return None
 
     return build_side_pics(all_side_pics), build_top_pics(all_top_pics, top_x, dim)
 
 
 if __name__ == "__main__":
     import pathlib as path
-    row_pics, col_pics = crop_picture("picross/images/25x25_1.png", 25)
+    row_pics, col_pics = crop_picture("picross/tmp/image.png", 25)
     tmp_dir = path.Path("picross/tmp")
     tmp_dir.mkdir(exist_ok=True)
     row_pics_dir = tmp_dir / "rows"
