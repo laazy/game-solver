@@ -43,7 +43,13 @@ def swipe(size, row, col_begin, length):
             f"{ADB} shell input swipe {x} {y} {x + (length - 1) * grid_size} {y}")
 
 
+def need_first_touch():
+    return True
+
+
 def simulate_touch(board):
+    if need_first_touch():
+        os.system(f"{ADB} shell input tap 400 800")
     dim = len(board)
     for i, row in enumerate(board):
         grouped_row = [(x, len(list(g))) for x, g in groupby(row)]

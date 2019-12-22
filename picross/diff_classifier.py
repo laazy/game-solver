@@ -1,17 +1,21 @@
 from PIL import Image
+from typing import List
+import pathlib
 import numpy as np
 import pickle
 import os
 
 
 class Model:
-    def __init__(self, img_dir: str):
-        self.imgs = [np.array(Image.open(f"{img_dir}/_{i}.png")) for i in range(10)]
+    def __init__(self, data: List[np.array]):
+        self.imgs = data
     
     def cal_diff(self, pic):
+        p = pic.copy() // 255
+        p = np.array(p, dtype=np.int8)
         diff = []
-        for index, img in enumerate(self.imgs.copy()):
-            diff.append(np.sum((img - pic)**2))
+        for img in self.imgs:
+            diff.append(np.sum(img * (2 * p - 1)))
         return diff
 
 
@@ -22,8 +26,26 @@ class DiffClassifier:
             self.load_model(model)
     
     def build_model(self, path):
-        self.model = Model(img_dir=path)
-    
+        model_data = [None for _ in range(10)]
+        pic_cnt = [0 for _ in range(10)]
+        pics_path = pathlib.Path(path)
+        for pic_path in pics_path.iterdir():
+            digit = int(str(pic_path.stem)[0])
+            img = np.array(Image.open(str(pic_path)), dtype=np.int32)
+            img_data = img // 255
+            if model_data[digit] is None:
+                model_data[digit] = img_data
+            else:
+                model_data[digit] += img_data
+            pic_cnt[digit] += 1
+        for digit in range(10):
+            md = model_data[digit]
+            md[md == 0] = -1
+            md[np.logical_and(md > 0, md < pic_cnt[digit])] = 0
+            md[md == pic_cnt[digit]] = 1
+            # print(md)
+        self.model = Model(data=[np.array(d, dtype=np.int8) for d in model_data])
+
     def load_model(self, file):
         with open(file, "rb") as f:
             self.model = pickle.load(f)
@@ -39,17 +61,21 @@ class DiffClassifier:
         target = np.array(Image.open(pic_path))
         return self.predict(target)
 
+    def predict_from_img(self, img):
+        target = np.array(img)
+        return self.predict(target)
+
     def predict(self, pic):
         res = self.model.cal_diff(pic)
-        return res.index(min(res))
+        return res.index(max(res))
 
 
 if __name__ == "__main__":
-    # dc = DiffClassifier()
-    # dc.build_model("images/standard_nums")
-    # dc.save_model("diff_model")
+    dc = DiffClassifier()
+    dc.build_model("picross/Cropped_Number")
+    dc.save_model("picross/diff_model")
 
-    file = "Cropped_Number_yfzm/59.png"
-    dc = DiffClassifier("diff_model")
+    file = "picross/Cropped_Number/6_1311.png"
+    # dc = DiffClassifier("picross/diff_model")
     res = dc.predict_from_path(file)
     print(res)

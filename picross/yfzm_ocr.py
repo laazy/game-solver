@@ -120,7 +120,8 @@ def is_pixel_yellow(pixel):
 
 
 def get_all_pics(origin_pic: Image, row_height: int) -> List[List[PicInfo]]:
-    bin_pic = origin_pic.convert('L').point(lambda x: 1 if x > 80 else 0, mode='1')
+    bin_pic = origin_pic.convert('L').point(lambda x: 1 if x > 130 else 0, mode='1')
+    # bin_pic.show()
     opx = origin_pic.load()
     px = bin_pic.load()
     x_len, y_len = bin_pic.size
@@ -132,7 +133,7 @@ def get_all_pics(origin_pic: Image, row_height: int) -> List[List[PicInfo]]:
         while x < x_len:
             if px[x, y_mid]:
                 num_box = find_area((x, y_mid), bin_pic)
-                draw_box(opx, (num_box[0], num_box[1]), (num_box[2], num_box[3]))
+                # draw_box(opx, (num_box[0], num_box[1]), (num_box[2], num_box[3]))
                 row_pics.append(PicInfo(
                     img=pad_image(origin_pic.crop(num_box)),
                     x_mid=(num_box[2] + num_box[0]) // 2,
