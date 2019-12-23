@@ -1,5 +1,6 @@
 from typing import List
-from itertools import cycle
+from itertools import cycle, groupby
+from copy import copy, deepcopy
 import sys
 import time
 
@@ -22,11 +23,14 @@ class Solver:
     def str_to_hint_matrix(s: str) -> List[List[int]]:
         return [[int(j) for j in i.split()] for i in s.split(',')]
 
-    def print_board(self):
-        for rows in self.board:
+    def print_board(self, board):
+        for rows in board:
             for item in rows:
                 print(f"{item if item == 1 else 0 if item == -1 else 'N':>3}", end="")
             print()
+
+    def output(self):
+        self.print_board(self.board)
 
     def load_puzzle_from_file(self, file_path: str):
         with open(file_path, 'r') as f:
@@ -72,16 +76,21 @@ class Solver:
         return cycle(res)
 
     def solve(self):
+        result = self._solve(self.board)
+        assert result
+
+    def _solve(self, board):
         row_p13s, col_p13s = [None] * self.col, [None] * self.row
         round_orders = self.cal_orders()
+        cnt = 0
         for item in round_orders:
             index = item["index"]
             if item["type"] == ROW:
-                line = self.board[index]
+                line = board[index]
                 info = self.row_info[index]
                 p13s = row_p13s
             else:
-                line = [i[index] for i in self.board]
+                line = [i[index] for i in board]
                 info = self.col_info[index]
                 p13s = col_p13s
 
@@ -91,14 +100,37 @@ class Solver:
             p13s[index] = p13s[index] or self.gen_line(info, line)
             p13s[index] = self.ignore_impossible(p13s[index], line)
             absolute_answer = self.count_absolute_answer(p13s[index])
+            if len(absolute_answer) == 0:
+                return False
 
             if item["type"] == ROW:
-                self.board[index] = absolute_answer
+                board[index] = absolute_answer
             else:
                 for i in range(self.row):
-                    self.board[i][index] = absolute_answer[i]
-            if self.matched():
-                break
+                    board[i][index] = absolute_answer[i]
+            if self.full(board):
+                return self.matched(board)
+            cnt += 1
+            if cnt >= 1000:
+                x, y = self.find_unknown(board)
+                print(f"{x}, {y}")
+                board[x][y] = 1
+                new_board = deepcopy(board)
+                if self._solve(new_board):
+                    for index, row in enumerate(new_board):
+                        board[index] = row                    
+                    return True
+                else:
+                    board[x][y] = -1
+                    return self._solve(board)
+        return False
+
+    def find_unknown(self, board):
+        for x, row in enumerate(board):
+            for y, col in enumerate(row):
+                if col == 0:
+                    return x, y
+        return None, None
 
     def gen_line(self, info: List, line: List) -> Matrix:
         length = len(line)
@@ -127,8 +159,24 @@ class Solver:
         count_table = {-len(possibility): -1, len(possibility): 1}
         return [count_table.get(sum(i), 0) for i in zip(*possibility)]
 
-    def matched(self) -> bool:
-        return all([all(i) for i in self.board])
+    @staticmethod
+    def full(board) -> bool:
+        return all([all(i) for i in board])
+
+    def matched(self, board) -> bool:
+        def _check_line(line, hint) -> bool:
+            grouped_row = [(x, len(list(g))) for x, g in groupby(line)]
+            black_chunks = filter(lambda item: item[0] == 1, grouped_row)
+            black_list = list(map(lambda item: item[1], black_chunks))
+            return black_list == hint
+        for index, row in enumerate(board):
+            if not _check_line(row, self.row_info[index]):
+                return False
+        for index in range(self.row):
+            col = [i[index] for i in board]
+            if not _check_line(col, self.col_info[index]):
+                return False
+        return True
 
 
 if __name__ == "__main__":
@@ -140,5 +188,5 @@ if __name__ == "__main__":
     _start = time.time()
     solver.solve()
     _end = time.time()
-    solver.print_board()
+    solver.output()
     print(f"time spent: {_end - _start}")
