@@ -1,20 +1,5 @@
 from typing import Tuple, List
 
-# puzzle = [
-#     #       ||       ||
-#     [0, 0, 7, 0, 0, 0, 0, 8, 0],
-#     [4, 0, 5, 0, 0, 3, 0, 0, 0],
-#     [8, 0, 0, 9, 5, 0, 0, 0, 0],
-#     #       ||       ||
-#     [0, 0, 0, 0, 0, 8, 1, 0, 0],
-#     [9, 0, 0, 3, 6, 7, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 4, 0],
-#     #       ||       ||
-#     [7, 0, 0, 0, 0, 9, 2, 0, 0],
-#     [0, 0, 1, 0, 0, 0, 3, 6, 0],
-#     [0, 2, 0, 0, 0, 0, 0, 0, 0]
-# ]
-
 puzzle = [
     #       ||       ||
     [0, 0, 4, 0, 0, 7, 0, 6, 0],
@@ -39,6 +24,8 @@ class Cell:
     '''
     This class represent the small box in game board. The whole
     boars consist of 9*9 `Cell`
+    To avoid misunderstanding, cell below represent number in cell,
+    note below represent note in cell.
     '''
 
     def __init__(self, num: int, pos: Tuple[int, int]):
@@ -57,9 +44,9 @@ class Cell:
         '''
         Get output of a cell. 
         Filled:   |   Unfilled:
-                |   1 2 3
-        9       |   4 0 6
-                |   0 0 0 
+                  |   1 2 3
+        9         |   4 0 6
+                  |   0 0 0 
         '''
         if self.num != 0:
             return ['      ', f'   {self.num}  ', '      ']
@@ -107,7 +94,8 @@ class Solver:
         self.tiny: Matrix = None
 
     def solve(self):
-        pass
+        while not self.check():
+            self.iter()
 
     @staticmethod
     def check_puzzle(puzzle) -> Tuple[bool, str]:
@@ -215,8 +203,10 @@ class Solver:
         for index, i in enumerate([*self.rows, *self.cols, *self.tiny]):
             s = {j.num for j in i}
             s.intersection_update(NOTE_RANGE)
+            if len(s) != len([j.num for j in i if j.num != 0]):
+                print(f"found same number between cells in {index}")
             if any([True if s.intersection(j.note) else False for j in i]):
-                print(f"check failure in {index}")
+                print(f"found same number between cell ans notes in {index}")
                 ans = False
         return ans
 
@@ -240,10 +230,5 @@ class Solver:
 if __name__ == "__main__":
     solver = Solver()
     solver.load_puzzle(puzzle)
-    'sss'.translate
-    while True:
-        solver.iter()
-        if solver.check():
-            print(solver)
-            break
-        # input()
+    solver.solve()
+    print(solver)
