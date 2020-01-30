@@ -17,18 +17,21 @@ from typing import Tuple, List
 
 puzzle = [
     #       ||       ||
-    [0, 1, 0, 3, 8, 6, 9, 0, 2],
-    [7, 3, 0, 1, 0, 0, 0, 8, 4],
-    [0, 6, 0, 4, 9, 0, 0, 0, 0],
+    [0, 0, 4, 0, 0, 7, 0, 6, 0],
+    [0, 0, 0, 1, 0, 0, 0, 0, 0],
+    [2, 0, 0, 0, 0, 0, 9, 3, 0],
     #       ||       ||
-    [8, 5, 6, 0, 0, 0, 0, 0, 0],
-    [0, 0, 3, 8, 0, 5, 7, 0, 0],
-    [0, 0, 0, 0, 0, 0, 2, 5, 8],
+    [0, 0, 0, 0, 0, 5, 0, 0, 2],
+    [0, 0, 0, 0, 0, 0, 0, 4, 0],
+    [0, 0, 0, 0, 3, 2, 5, 7, 0],
     #       ||       ||
-    [0, 0, 0, 0, 7, 8, 0, 2, 0],
-    [6, 9, 0, 0, 0, 4, 0, 3, 7],
-    [1, 0, 7, 2, 6, 3, 0, 9, 0]
+    [5, 0, 8, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 4, 0, 0, 0, 1, 0],
+    [9, 0, 0, 6, 0, 0, 3, 0, 0]
 ]
+
+INDEX_RANGE = range(9)
+HINT_RANGE = range(1, 10)
 
 
 class Cell:
@@ -37,7 +40,7 @@ class Cell:
         self.hint = []
         self.num = num
         if num == 0:
-            self.hint = list(range(1, 10))
+            self.hint = list(HINT_RANGE)
 
     def __str__(self):
         return '\n'.join(self.get_expr())
@@ -46,15 +49,20 @@ class Cell:
         if self.num != 0:
             return ['      ', f'   {self.num}  ', '      ']
         s = ''
-        for i in range(1, 10):
+        for i in HINT_RANGE:
             s += f' {i}' if i in self.hint else ' 0'
         strip = len(s) // 3
         return [s[i: i + strip] for i in range(0, len(s), strip)]
 
-    def update(self):
+    def update(self, num=0) -> bool:
         if len(self.hint) == 1:
-            self.num = self.hint[0]
+            self.num = self.hint.pop()
+            return True
+        elif num != 0:
+            self.num = num
             self.hint = []
+            return True
+        return False
 
     def remove(self, n: int):
         if n in self.hint:
@@ -97,52 +105,88 @@ class Solver:
         self.rows = self.board
         self.cols = list(zip(*self.rows))
         self.tiny = [[
-            self.board[i // 3 * 3 + j // 3][i % 3 * 3 + j % 3] for j in range(9)]
-            for i in range(9)]
+            self.board[i // 3 * 3 + j // 3][i % 3 * 3 + j % 3] for j in INDEX_RANGE]
+            for i in INDEX_RANGE]
 
-    def get_row(self, c: Cell):
+    def get_row(self, c: Cell) -> Cells:
         return self.rows[c.pos[0]]
 
-    def get_col(self, c: Cell):
+    def get_col(self, c: Cell) -> Cells:
         return self.cols[c.pos[1]]
 
-    def get_small(self, c: Cell):
+    def get_tiny(self, c: Cell) -> Cells:
         x, y = c.pos
         return self.tiny[x // 3 * 3 + y // 3]
 
     def get_neighbor(self, c: Cell) -> List[Cell]:
-        return set().union(self.get_col(c), self.get_row(c), self.get_small(c))
+        return set().union(self.get_col(c), self.get_row(c), self.get_tiny(c))
 
     def remove_note(self, c: Cell) -> None:
         if c.num != 0:
             for k in self.get_neighbor(c):
                 k.remove(c.num)
-                k.update()
 
     def set_only(self, cells: List[Cell]) -> None:
-        s = {i: list(filter(lambda c: i in c.hint, cells)) for i in range(9)}
-        for k, v in s.items():
-            if len(v) == 1:
-                v[0].num = k
+        for hint in HINT_RANGE:
+            s = list(filter(lambda c: hint in c.hint, cells))
+            if len(s) == 1:
+                s[0].update(hint)
+                self.remove_note(s[0])
+
+    def exclude_other(self, num: int) -> None:
+        cells = self.tiny[num]
+        for hint in HINT_RANGE:
+            temp = list(filter(lambda c: hint in c.hint, cells))
+            if len({i.pos[0] for i in temp}) == 1:
+                for i in self.get_row(temp[0]):
+                    if i not in temp:
+                        i.remove(hint)
+            if len({i.pos[1] for i in temp}) == 1:
+                for i in self.get_col(temp[0]):
+                    if i not in temp:
+                        i.remove(hint)
 
     def iter(self):
         for i in self.board:
             for j in i:
                 self.remove_note(j)
+                if j.update():
+                    self.remove_note(j)
 
-        for i in range(9):
+        self.check_invariants()
+
+        for i in INDEX_RANGE:
             self.set_only(self.rows[i])
             self.set_only(self.cols[i])
             self.set_only(self.tiny[i])
 
-            
+        self.check_invariants()
+
+        for i in INDEX_RANGE:
+            self.exclude_other(i)
+
+        self.check_invariants()
+
+    def check_invariants(self):
+        ans = True
+        for index, i in enumerate([*self.rows, *self.cols, *self.tiny]):
+            s = {j.num for j in i}
+            s.intersection_update(HINT_RANGE)
+            if any([True if s.intersection(j.hint) else False for j in i]):
+                print(f"check failure in {index}")
+                ans = False
+        return ans
 
     def check(self):
-        pass
+        for i in [*self.rows, *self.cols, *self.tiny]:
+            s = {j.num for j in i}
+            if s.symmetric_difference(HINT_RANGE):
+                return False
+        return True
 
     def __str__(self):
         ans = []
-        for i in range(9):
+        for i in INDEX_RANGE:
             row = [j.get_expr() for j in self.board[i]]
             t = ['  '.join(i) for i in zip(*row)] + ['']
             ans += t
@@ -152,7 +196,10 @@ class Solver:
 if __name__ == "__main__":
     solver = Solver()
     solver.load_puzzle(puzzle)
+    'sss'.translate
     while True:
-        print(solver)
         solver.iter()
-        input()
+        if solver.check():
+            print(solver)
+            break
+        # input()
