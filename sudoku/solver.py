@@ -32,7 +32,7 @@ puzzle = [
 
 # define two range
 INDEX_RANGE = range(9)
-HINT_RANGE = range(1, 10)
+NOTE_RANGE = range(1, 10)
 
 
 class Cell:
@@ -40,14 +40,15 @@ class Cell:
     This class represent the small box in game board. The whole
     boars consist of 9*9 `Cell`
     '''
+
     def __init__(self, num: int, pos: Tuple[int, int]):
         # init cell with num.
         self.pos = pos
-        self.hint = []
+        self.note = []
         self.num = num
-        # if num is 0, fill hints with all possibilities
+        # if num is 0, fill note with all possibilities
         if num == 0:
-            self.hint = list(HINT_RANGE)
+            self.note = list(NOTE_RANGE)
 
     def __str__(self):
         return '\n'.join(self.get_expr())
@@ -63,29 +64,30 @@ class Cell:
         if self.num != 0:
             return ['      ', f'   {self.num}  ', '      ']
         s = ''
-        for i in HINT_RANGE:
-            s += f' {i}' if i in self.hint else ' 0'
+        for i in NOTE_RANGE:
+            s += f' {i}' if i in self.note else ' 0'
         strip = len(s) // 3
         return [s[i: i + strip] for i in range(0, len(s), strip)]
 
     def update(self, num=0) -> bool:
-        # update cell by hints or input, return if it is filled
-        if len(self.hint) == 1:
-            self.num = self.hint.pop()
+        # update cell by note or input, return if it is filled
+        if len(self.note) == 1:
+            self.num = self.note.pop()
             return True
         elif num != 0:
             self.num = num
-            self.hint = []
+            self.note = []
             return True
         return False
 
     def remove(self, n: int):
-        # remove hint
-        if n in self.hint:
-            self.hint.remove(n)
+        # remove note
+        if n in self.note:
+            self.note.remove(n)
 
     def __hash__(self):
         return id(self)
+
 
 # define types
 Cells = List[Cell]
@@ -96,6 +98,7 @@ class Solver:
     '''
     This class if solver for sudoku
     '''
+
     def __init__(self):
         # define while board, row set, col set, tiny board set.
         self.board: Matrix = None
@@ -131,15 +134,15 @@ class Solver:
             for i in INDEX_RANGE]
 
     def get_row(self, c: Cell) -> Cells:
-        # get the row where this cell is 
+        # get the row where this cell is
         return self.rows[c.pos[0]]
 
     def get_col(self, c: Cell) -> Cells:
-        # get the col where this cell is 
+        # get the col where this cell is
         return self.cols[c.pos[1]]
 
     def get_tiny(self, c: Cell) -> Cells:
-        # get the tiny board where this cell is 
+        # get the tiny board where this cell is
         x, y = c.pos
         return self.tiny[x // 3 * 3 + y // 3]
 
@@ -156,11 +159,11 @@ class Solver:
         '''
         If a row/col/tiny board only have 1 cell have some number in note,
         this cell must be that number.
-        ''' 
-        for hint in HINT_RANGE:
-            s = list(filter(lambda c: hint in c.hint, cells))
+        '''
+        for note in NOTE_RANGE:
+            s = list(filter(lambda c: note in c.note, cells))
             if len(s) == 1:
-                s[0].update(hint)
+                s[0].update(note)
                 self.remove_note(s[0])
 
     def exclude_other(self, num: int) -> None:
@@ -169,16 +172,16 @@ class Solver:
         other note in the line could not have this number.
         '''
         cells = self.tiny[num]
-        for hint in HINT_RANGE:
-            temp = list(filter(lambda c: hint in c.hint, cells))
+        for note in NOTE_RANGE:
+            temp = list(filter(lambda c: note in c.note, cells))
             if len({i.pos[0] for i in temp}) == 1:
                 for i in self.get_row(temp[0]):
                     if i not in temp:
-                        i.remove(hint)
+                        i.remove(note)
             if len({i.pos[1] for i in temp}) == 1:
                 for i in self.get_col(temp[0]):
                     if i not in temp:
-                        i.remove(hint)
+                        i.remove(note)
 
     def iter(self):
         # Iterate the solver process.
@@ -211,8 +214,8 @@ class Solver:
         ans = True
         for index, i in enumerate([*self.rows, *self.cols, *self.tiny]):
             s = {j.num for j in i}
-            s.intersection_update(HINT_RANGE)
-            if any([True if s.intersection(j.hint) else False for j in i]):
+            s.intersection_update(NOTE_RANGE)
+            if any([True if s.intersection(j.note) else False for j in i]):
                 print(f"check failure in {index}")
                 ans = False
         return ans
@@ -221,7 +224,7 @@ class Solver:
         # check whether all filled correctly.
         for i in [*self.rows, *self.cols, *self.tiny]:
             s = {j.num for j in i}
-            if s.symmetric_difference(HINT_RANGE):
+            if s.symmetric_difference(NOTE_RANGE):
                 return False
         return True
 
