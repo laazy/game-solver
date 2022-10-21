@@ -1,6 +1,6 @@
 [[source]]
 name = "pypi"
-url = "https://pypi.org/simple"
+url = "https://mirrors.aliyun.com/pypi/simple"
 verify_ssl = true
 
 [dev-packages]
@@ -9,10 +9,9 @@ rope = "*"
 pylint = "*"
 
 [packages]
-tensorflow = "*"
 pillow = "*"
 numpy = "*"
 matplotlib = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.10"
