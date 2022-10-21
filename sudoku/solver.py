@@ -83,7 +83,7 @@ Matrix = List[Cells]
 
 class Solver:
     '''
-    This class if solver for sudoku
+    This class is solver for sudoku
     '''
 
     def __init__(self):
