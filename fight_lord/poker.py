@@ -4,6 +4,7 @@ from typing import Dict, Iterable, List, Tuple, Callable
 
 POKERS_KINDS = '3456789TJQKA2SB'
 
+
 CardPlaySet = Iterable[Tuple[str, str]]
 SuitFunc = Callable[[str], CardPlaySet]
 CompareFunc = Callable[[str, str], bool]
@@ -11,6 +12,10 @@ CompareFunc = Callable[[str, str], bool]
 
 SUIT_FUNC: List[Tuple[str, SuitFunc]] = []
 COMPARE_FUNC: Dict[str, CompareFunc] = {}
+
+
+def _sorted_poker(pokers: str):
+    return sorted(pokers, key=POKERS_KINDS.find)
 
 
 def _suit(func):
@@ -29,7 +34,7 @@ def is_bigger(name: str, p1: str, p2: str):
 
 
 def _pair_n(pokers: str, n) -> CardPlaySet:
-    pokers = ''.join(sorted(pokers, key=POKERS_KINDS.find))
+    pokers = ''.join(_sorted_poker(pokers))
     for p, c in Counter(pokers).items():
         if c >= n:
             yield p*n, pokers.replace(p, '', n)
@@ -58,7 +63,7 @@ def pair4(pokers: str) -> CardPlaySet:
 def straight(pokers: str) -> CardPlaySet:
     above_number = 4
     allowing = '3456789TJQK'
-    kinds = ''.join(sorted(set(pokers), key=POKERS_KINDS.find))
+    kinds = ''.join(_sorted_poker(set(pokers)))
     if len(kinds) <= above_number:
         return
     for begin in range(len(kinds) - above_number):
@@ -73,7 +78,7 @@ def straight(pokers: str) -> CardPlaySet:
 
 @_suit
 def single(pokers: str) -> CardPlaySet:
-    for c in pokers:
+    for c in _sorted_poker(set(pokers)):
         yield c, pokers.replace(c, '', 1)
 
 
@@ -84,7 +89,8 @@ def skip(pokers: str) -> CardPlaySet:
 
 @_compare
 def skip_compare(p1: str, p2: str) -> bool:
-    return p2 != ''
+    return p1 != ''
+
 
 if __name__ == "__main__":
     print(list(straight('33456789AAB')))
