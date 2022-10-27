@@ -6,6 +6,11 @@
 English/
 EnglishFnt.tgz
 
+# text json and pickle file
+*.json
+*.txt
+*.pic
+
 # model file
 *.h5
 */*.h5
