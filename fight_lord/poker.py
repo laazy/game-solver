@@ -41,7 +41,7 @@ def _pair_n(pokers: str, n) -> CardPlaySet:
 
 
 def _default_compare(p1: str, p2: str) -> bool:
-    return POKERS_KINDS.find(p1) > POKERS_KINDS.find(p2)
+    return POKERS_KINDS.find(p1[0]) > POKERS_KINDS.find(p2[0])
 
 
 @_suit
