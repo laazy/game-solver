@@ -22,6 +22,16 @@ from picross_solver import Solver
 
 ADB = os.environ.get("ADB", "adb")
 
+# Nonogram Galaxy menu layout for 1440x3200. These are the only hard-coded
+# screen coords; the grid itself is detected. Re-measure per device/game.
+NAV = {
+    "win_continue": (718, 2417),      # checkmark on the victory screen
+    "dialog_cancel": (1160, 1868),    # "取消" on the exit-confirm dialog
+    "tile_xs": [143, 373, 603, 833, 1063, 1293],  # level-select tile columns
+    "tile_ys": [2420, 2678],                       # level-select tile rows
+    "tile_open_frac": 0.18,           # light-fraction below -> unplayed tile
+}
+
 
 # --------------------------------------------------------------------------- adb
 def _sh(*args):
@@ -279,6 +289,51 @@ def solve_board(col_info, row_info):
     s.load_puzzle(col_info, row_info)
     s.solve()
     return s.board
+
+
+# ------------------------------------------------------------------- navigation
+def back():
+    _sh("shell", "input", "keyevent", "KEYCODE_BACK")
+
+
+def _light_frac(px, cx, cy, r=70, step=10, thr=150):
+    vals = [_luma(px[cx + dx, cy + dy])
+            for dx in range(-r, r + 1, step) for dy in range(-r, r + 1, step)]
+    return sum(v > thr for v in vals) / len(vals)
+
+
+def find_next_tile(img_path):
+    """On the level-select screen, return the (x,y) of the first unplayed
+    tile (row-major). Completed tiles show a bright picture; unplayed tiles
+    are dark with a dimension label. Returns None if none visible."""
+    im = Image.open(img_path).convert("RGB")
+    px = im.load()
+    for y in NAV["tile_ys"]:
+        for x in NAV["tile_xs"]:
+            if _light_frac(px, x, y) < NAV["tile_open_frac"]:
+                return (x, y)
+    return None
+
+
+def start_next(wait=1.5):
+    """From the victory screen, advance to the next puzzle.
+
+    Flow: tap continue -> galaxy view -> back -> level select -> tap the
+    next unplayed tile. Returns True once a puzzle screen is reached.
+    Caller is responsible for the inter-step settle time via `wait`.
+    """
+    import time
+    tap(*NAV["win_continue"])
+    time.sleep(wait)
+    back()                       # galaxy -> level select
+    time.sleep(wait)
+    shot = screenshot("/tmp/_levelsel.png")
+    nxt = find_next_tile(shot)
+    if not nxt:
+        return False
+    tap(*nxt)
+    time.sleep(wait)
+    return True
 
 
 if __name__ == "__main__":
