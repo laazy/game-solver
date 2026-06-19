@@ -80,7 +80,9 @@ class Solver:
         assert result
 
     def _solve(self, board):
-        row_p13s, col_p13s = [None] * self.col, [None] * self.row
+        # row_p13s is indexed by row index (len == self.row); col_p13s by col index.
+        # Previously these were swapped, which IndexErrors on non-square puzzles.
+        row_p13s, col_p13s = [None] * self.row, [None] * self.col
         round_orders = self.cal_orders()
         cnt = 0
         for item in round_orders:
