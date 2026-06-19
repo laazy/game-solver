@@ -30,6 +30,7 @@ NAV = {
     "tile_xs": [143, 373, 603, 833, 1063, 1293],  # level-select tile columns
     "tile_ys": [2420, 2678],                       # level-select tile rows
     "tile_open_frac": 0.18,           # light-fraction below -> unplayed tile
+    "scroll_right": (1417, 2545),     # ">" to page the level list forward
 }
 
 
@@ -88,7 +89,7 @@ def _longest_run(mask, lo=0, max_gap=20):
     return best
 
 
-def detect_grid(img_path, n=None, light_thr=150, fill_frac=0.55):
+def detect_grid(img_path, n=None, light_thr=100, fill_frac=0.55):
     """Find the playfield as the largest 'not dark' rectangle.
 
     Uses luminance projection: a grid row/col is bright across most of its
@@ -129,36 +130,44 @@ def detect_grid(img_path, n=None, light_thr=150, fill_frac=0.55):
     if y0 is None:
         raise RuntimeError("grid y-extent not found")
 
-    w, h = x1 - x0, y1 - y0
     if n is None:
-        # Pixel span alone can't reveal the cell count; detect it from the
-        # internal grid lines (dark/blue separators dip the brightness).
-        n = _infer_n(px, x0, x1, y0, y1, light_thr) or 10
+        n = _infer_n(im, x0, x1, y0, y1) or 10
     cell = ((x1 - x0) + (y1 - y0)) / (2 * n)
     return {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "cell": cell, "n": n}
 
 
-def _infer_n(px, x0, x1, y0, y1, light_thr):
-    """Count cells by finding the periodic gridline dips along the top edge."""
-    yline = y0 + 3
-    dark = []
-    for x in range(x0, x1 + 1):
-        if _luma(px[x, yline]) <= light_thr:
-            dark.append(x)
-    if not dark:
+def _gridline_pitch(prof, min_gap=24):
+    """Median spacing between gridlines (local brightness minima) in a 1-D
+    profile. Robust to a few spurious minima and to X-marked cells."""
+    import numpy as np
+    thr = (np.percentile(prof, 20) + np.percentile(prof, 80)) / 2
+    mins = []
+    for i in range(1, len(prof) - 1):
+        if prof[i] < thr and prof[i] <= prof[i - 1] and prof[i] <= prof[i + 1]:
+            if not mins or i - mins[-1] >= min_gap:
+                mins.append(i)
+            elif prof[i] < prof[mins[-1]]:
+                mins[-1] = i
+    if len(mins) < 2:
         return None
-    # group contiguous dark pixels into gridline positions
-    groups = []
-    run = [dark[0]]
-    for a, b in zip(dark, dark[1:]):
-        if b - a <= 2:
-            run.append(b)
-        else:
-            groups.append(sum(run) // len(run))
-            run = [b]
-    groups.append(sum(run) // len(run))
-    # n cells -> n+1 separators (incl. borders); cells = gaps between groups
-    return max(1, len(groups) - 1) if len(groups) >= 2 else None
+    return float(np.median(np.diff(mins)))
+
+
+def _infer_n(im, x0, x1, y0, y1):
+    """Infer cell count as span / cell-size, where cell-size is the median
+    gridline pitch. The median over the grid height dodges the highlighted
+    cursor row/column, and the pitch survives X-marked (dimmer) cells."""
+    import numpy as np
+    arr = np.asarray(im.convert("RGB")).astype(np.float64)
+    luma = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
+    colprof = np.median(luma[y0:y1, x0:x1], axis=0)
+    rowprof = np.median(luma[y0:y1, x0:x1], axis=1)
+    pitches = [p for p in (_gridline_pitch(colprof), _gridline_pitch(rowprof))
+               if p]
+    if not pitches:
+        return None
+    pitch = float(np.mean(pitches))
+    return max(1, round(((x1 - x0) + (y1 - y0)) / 2 / pitch))
 
 
 def cell_center(g, i, j):
@@ -242,6 +251,8 @@ def read_board(img_path, g, n=None, dark_thr=90, x_thr=120):
     n = n or g.get("n", 10)
     im = Image.open(img_path).convert("RGB")
     px = im.load()
+    r = max(6, int(g["cell"] * 0.3))   # patch stays inside the cell (no gridlines)
+    step = max(2, r // 5)
     out = []
     for i in range(n):
         row = []
@@ -249,7 +260,7 @@ def read_board(img_path, g, n=None, dark_thr=90, x_thr=120):
             cx, cy = cell_center(g, i, j)
             cx, cy = int(cx), int(cy)
             vals = [_luma(px[cx + dx, cy + dy])
-                    for dx in range(-25, 26, 5) for dy in range(-25, 26, 5)]
+                    for dx in range(-r, r + 1, step) for dy in range(-r, r + 1, step)]
             avg = sum(vals) / len(vals)
             if avg < dark_thr:
                 row.append(1)
@@ -285,10 +296,11 @@ def fill_verified(board, g, fill_button=None, first_tap=None, retries=3):
 
 
 def solve_board(col_info, row_info):
-    s = Solver()
-    s.load_puzzle(col_info, row_info)
-    s.solve()
-    return s.board
+    import solver2
+    board = solver2.solve(col_info, row_info)
+    if board is None:
+        raise AssertionError("no solution for the given clues")
+    return board
 
 
 # ------------------------------------------------------------------- navigation
@@ -315,25 +327,63 @@ def find_next_tile(img_path):
     return None
 
 
-def start_next(wait=1.5):
-    """From the victory screen, advance to the next puzzle.
+def _region_frac(img_path, y0, y1, x0, x1, test):
+    import numpy as np
+    a = np.asarray(Image.open(img_path).convert("RGB")).astype(np.int32)
+    reg = a[y0:y1, x0:x1]
+    R, G, B = reg[:, :, 0], reg[:, :, 1], reg[:, :, 2]
+    return float(test(R, G, B).mean())
 
-    Flow: tap continue -> galaxy view -> back -> level select -> tap the
-    next unplayed tile. Returns True once a puzzle screen is reached.
-    Caller is responsible for the inter-step settle time via `wait`.
-    """
+
+def in_puzzle(img_path):
+    """True while a puzzle (with its yellow controls) is on screen."""
+    return _region_frac(img_path, 2300, 2950, 0, 1440,
+                        lambda R, G, B: (R > 180) & (G > 140) & (B < 110)) > 0.02
+
+
+def exit_dialog(img_path):
+    """True when the 'confirm exit?' dialog is up."""
+    return _region_frac(img_path, 1480, 1780, 200, 1280,
+                        lambda R, G, B: (R > 210) & (G > 200) & (B > 190)) > 0.3
+
+
+def level_select(img_path):
+    """True on the level-select screen (bottom tile grid present)."""
+    return _region_frac(img_path, 2380, 2950, 0, 1440,
+                        lambda R, G, B: (R > 120) | (G > 120)) > 0.05
+
+
+def start_next(wait=1.5, max_steps=10):
+    """From the victory screen, advance to the next puzzle, robust to the
+    galaxy interstitial and the stray exit-confirm dialog.
+
+    State machine: dialog -> cancel; level-select -> tap next tile; otherwise
+    (victory/galaxy) -> continue then back. Returns True once in a puzzle."""
     import time
-    tap(*NAV["win_continue"])
-    time.sleep(wait)
-    back()                       # galaxy -> level select
-    time.sleep(wait)
-    shot = screenshot("/tmp/_levelsel.png")
-    nxt = find_next_tile(shot)
-    if not nxt:
-        return False
-    tap(*nxt)
-    time.sleep(wait)
-    return True
+    for _ in range(max_steps):
+        shot = screenshot("/tmp/_nav.png")
+        if in_puzzle(shot):
+            return True
+        if exit_dialog(shot):
+            tap(*NAV["dialog_cancel"])
+            time.sleep(wait)
+            continue
+        if level_select(shot):
+            nxt = find_next_tile(shot)
+            if nxt:
+                tap(*nxt)
+                time.sleep(wait)
+                continue
+            # all visible levels done -> swipe the tile strip to page forward
+            swipe(1100, 2545, 300, 2545, ms=400)
+            time.sleep(wait)
+            continue
+        # victory or galaxy: continue past it, then back toward level-select
+        tap(*NAV["win_continue"])
+        time.sleep(wait)
+        back()
+        time.sleep(wait)
+    return in_puzzle(screenshot("/tmp/_nav.png"))
 
 
 if __name__ == "__main__":
