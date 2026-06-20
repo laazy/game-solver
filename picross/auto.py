@@ -31,9 +31,6 @@ NAV = {
     "tile_ys": [2420, 2678],                       # level-select tile rows
     "tile_open_frac": 0.13,           # warm-fraction below -> unplayed tile
     "scroll_right": (1417, 2545),     # ">" to page the level list forward
-    "settings_gear": (120, 220),      # in-puzzle settings button (top-left)
-    "menu_reset": (855, 210),         # "RESET" in the settings menu
-    "confirm_yes": (220, 1880),       # "是" on a confirm dialog
 }
 
 
@@ -43,38 +40,19 @@ def _sh(*args):
 
 
 def screenshot(path="/tmp/picross.png"):
-    # exec-out streams the PNG over one connection -- no on-device temp file,
-    # no separate pull/rm (~320ms faster than screencap+pull+rm).
-    with open(path, "wb") as f:
-        subprocess.run([ADB, "exec-out", "screencap", "-p"], stdout=f)
+    _sh("shell", "screencap", "-p", "/sdcard/_ps.png")
+    _sh("pull", "/sdcard/_ps.png", path)
+    _sh("shell", "rm", "/sdcard/_ps.png")
     return path
-
-
-def _batch(cmds):
-    """Run many `input` calls in one `adb shell` -- one round-trip instead of
-    one per gesture. cmds is a list of arg-lists, e.g. [['tap','1','2'], ...]."""
-    if not cmds:
-        return
-    line = "; ".join("input " + " ".join(c) for c in cmds)
-    _sh("shell", line)
 
 
 def tap(x, y):
     _sh("shell", "input", "tap", str(int(x)), str(int(y)))
 
 
-def _tap_cmd(x, y):
-    return ["tap", str(int(x)), str(int(y))]
-
-
 def swipe(x1, y1, x2, y2, ms=60):
     _sh("shell", "input", "swipe", str(int(x1)), str(int(y1)),
         str(int(x2)), str(int(y2)), str(ms))
-
-
-def _swipe_cmd(x1, y1, x2, y2, ms):
-    return ["swipe", str(int(x1)), str(int(y1)),
-            str(int(x2)), str(int(y2)), str(int(ms))]
 
 
 # ------------------------------------------------------------------- grid detect
@@ -239,68 +217,63 @@ def _runs(board):
 
 
 def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
-         ms_per_cell=20, gap=0.12):
+         ms_per_cell=45):
     """Fill the solved board on screen.
 
     fill_button: (x,y) of the pencil/fill-mode button to activate first.
     first_tap:   (x,y) tapped once before filling (some games need focus).
-    swipe_runs:  draw each horizontal run with a single press-and-slide (fast,
-                 few touch events); single cells fall back to a tap. When False,
-                 every cell is tapped individually.
+    swipe_runs:  one swipe per horizontal run of filled cells (faster);
+                 single cells fall back to a tap.
     ms_per_cell: swipe duration scales with run length so a fast lift-off
                  doesn't drop the last cell of a run (observed failure mode).
-    gap:         pause after each gesture. Injecting touches faster than the
-                 game's UI thread processes them makes it stutter and either
-                 *drop* events (missing cells) or *coalesce* them into a
-                 double-tap (an X mark) -- both observed. Pacing the gestures to
-                 the game's own rate is what makes the fill reliable.
 
-    The first touch on a fresh puzzle only *enters* fill mode (it moves the
-    cursor and fills nothing); only later touches fill. So prime fill mode with
-    a tap on the SECOND fill cell -- the first cell is then filled normally when
-    its run is drawn, instead of being silently eaten by the mode-enter tap.
-    A primed single cell is filled last to avoid a double-tap on it.
+    Tap-only fill (swipe_runs=False) primes fill mode with an extra tap on the
+    first cell: the first tap on a fresh puzzle only enters fill mode and fills
+    nothing, so without priming the first cell is dropped.
     """
-    import time
     if fill_button:
         tap(*fill_button)
-        time.sleep(gap)
     if first_tap:
         tap(*first_tap)
-        time.sleep(gap)
+    if not swipe_runs:
+        cells = [(i, j) for i, col, length in _runs(board)
+                 for j in range(col, col + length)]
+        if cells:
+            # The first tap on a fresh puzzle only *enters* fill mode (it moves
+            # the cursor, fills nothing); every tap after that fills. So prime
+            # fill mode with a tap on the first cell, fill the rest, then fill
+            # that first cell LAST. Re-tapping it immediately would instead read
+            # as a double-tap (the X-mark gesture); spacing the two taps apart
+            # with the other cells avoids that and still fills it.
+            first = cells[0]
+            tap(*cell_center(g, *first))       # prime: enter fill mode only
+            for i, j in cells[1:]:
+                tap(*cell_center(g, i, j))
+            tap(*cell_center(g, *first))       # fill the primed cell last
+        return
+    # Swipe-fill. The first touch on a fresh puzzle only *enters* fill mode
+    # (fills nothing), so prime with a tap on the SECOND fill cell; the first
+    # cell then fills normally when its run is drawn. A primed single cell is
+    # filled last so the two taps on it don't read as a double-tap (X mark).
     runs = list(_runs(board))
     cells = [(i, j) for i, col, length in runs for j in range(col, col + length)]
     if not cells:
         return
     prime = cells[1] if len(cells) > 1 else cells[0]
     tap(*cell_center(g, *prime))               # enter fill mode (no fill)
-    time.sleep(gap)
-
-    def draw(i, col, length):
+    deferred = None
+    for i, col, length in runs:
+        if length == 1 and (i, col) == prime:
+            deferred = (i, col)
+            continue
         x0, y0 = cell_center(g, i, col)
         if length == 1:
             tap(x0, y0)
         else:
             x1, _ = cell_center(g, i, col + length - 1)
-            # Extend the end past the last cell's centre (clamped inside the
-            # grid) so a fast lift-off can't drop the final cell of the run.
-            x1 = min(x1 + 0.4 * g["cell"], g["x1"] - 2)
-            swipe(x0, y0, x1, y0, ms=max(120, ms_per_cell * length))
-        time.sleep(gap)
-
-    deferred = None
-    for i, col, length in runs:
-        if length == 1 and (i, col) == prime:
-            deferred = (i, col)                # don't double-tap the primed cell
-            continue
-        if swipe_runs:
-            draw(i, col, length)
-        else:
-            for j in range(col, col + length):
-                tap(*cell_center(g, i, j))
-                time.sleep(gap)
+            swipe(x0, y0, x1, y0, ms=max(80, ms_per_cell * length))
     if deferred:
-        tap(*cell_center(g, *deferred))        # fill the primed single cell last
+        tap(*cell_center(g, *deferred))
 
 
 def read_board(img_path, g, n=None, dark_thr=90, x_thr=120):
@@ -423,7 +396,7 @@ def level_select(img_path):
                         lambda R, G, B: (R > 120) | (G > 120)) > 0.05
 
 
-def start_next(wait=0.8, max_steps=10):
+def start_next(wait=1.5, max_steps=10):
     """From the victory screen, advance to the next puzzle, robust to the
     galaxy interstitial and the stray exit-confirm dialog.
 

@@ -29,67 +29,48 @@ def in_puzzle(img_path):
     return _yellow_frac(img_path) > 0.02
 
 
-def read_solvable():
-    """Screenshot, detect the grid and solve the clues. Returns (g, board) or
-    None. We never auto-RESET an unreadable board -- the in-game RESET wipes
-    saved progress -- so a board that can't be read is simply reported."""
-    img = auto.screenshot("/tmp/play.png")
-    try:
-        g = auto.detect_grid(img, n=None)
-        _, _, board = clue_ocr.solvable_clues(img, g)
-        return g, board
-    except (AssertionError, RuntimeError) as e:
-        print(f"  ! {e}")
-        return None
-
-
-def _won(tries=6, gap=0.35):
-    # check immediately (swipe-fill usually completes in one pass), then poll
-    # briefly for the victory screen instead of always waiting a fixed time.
-    for _ in range(tries):
-        if not in_puzzle(auto.screenshot("/tmp/play.png")):
-            return True
-        time.sleep(gap)
-    return False
-
-
 def solve_current():
-    """Solve the puzzle on screen, fill it, and re-tap any cells the swipe-fill
-    dropped until the win screen. Returns True on the win. This repair is
-    non-destructive: it only adds taps for cells the solution says are filled
-    but read back empty -- it never clears a cell, and never RESETs."""
-    res = read_solvable()
-    if not res:
+    """Solve the puzzle currently on screen. Returns True once the win screen
+    is reached, False if OCR/solve failed (screen left untouched-ish)."""
+    img = auto.screenshot("/tmp/play.png")
+    g = auto.detect_grid(img, n=None)
+    try:
+        col, row, board = clue_ocr.solvable_clues(img, g)
+    except AssertionError as e:
+        print(f"  ! {e}; skipping fill")
         return False
-    g, board = res
+
+    # Swipe-fill each run (primes fill mode on the second cell so the first
+    # cell isn't eaten). No pencil button: tapping it would fill the cursor
+    # cell (0,0), wrong whenever board[0][0] is empty.
+    auto.fill(board, g, fill_button=None, swipe_runs=True)
+
     n = g["n"]
-    # Fill cell-by-cell with individual, paced taps. A tap hits exactly one
-    # cell, so (unlike a run swipe) it can't bleed into the empty gap between
-    # two runs, and the pacing keeps the game from dropping or X-marking. Prime
-    # fill mode on the second cell so the first cell isn't eaten by the
-    # mode-enter touch; no pencil button (it would fill the cursor cell (0,0)).
-    auto.fill(board, g, fill_button=None, swipe_runs=False)
+
+    def won():
+        for _ in range(4):
+            time.sleep(1.0)
+            if not in_puzzle(auto.screenshot("/tmp/play.png")):
+                return True
+        return False
+
+    # trust the tap-only fill first; only repair genuinely missed cells.
+    # We never remove "extra" cells: filled cells read back reliably (dark),
+    # so missing has no false positives, whereas an empty cell under the
+    # cursor can read as filled -> removing it would wrongly fill (0,0).
     for _ in range(3):
-        if _won():
+        if won():
             return True
         actual = auto.read_board("/tmp/play.png", g, n=n)
         missing = [(i, j) for i in range(n) for j in range(n)
                    if board[i][j] == 1 and actual[i][j] != 1]
-        # Safety bound: a swipe-fill drops at most a few cells, so a large
-        # "missing" count means read_board is unreliable here (a dense board it
-        # can't classify). Tapping those would toggle correct cells off / to X
-        # and cascade -- so bail rather than wreck the board.
-        if not missing or len(missing) > max(4, n // 2):
-            break
         for i, j in missing:
             auto.tap(*auto.cell_center(g, i, j))
-    return _won()
+    return won()                            # final patient poll for the win
 
 
 def play_one():
     """Solve current level and advance to the next. Returns True on success."""
-    if not in_puzzle(auto.screenshot("/tmp/play.png")):
-        auto.start_next()                   # land in a puzzle if we aren't
     if not solve_current():
         return False
     return auto.start_next()
@@ -103,7 +84,7 @@ if __name__ == "__main__":
         if play_one():
             done += 1
             print(f"  done ({done} total)")
-            time.sleep(0.5)
+            time.sleep(1.5)
         else:
             print("  stopped: see /tmp/play.png")
             break
