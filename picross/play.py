@@ -63,16 +63,24 @@ def solve_current():
         return False
     g, board = res
     n = g["n"]
-    # Swipe-fill each run. Prime fill mode on the second cell so the first cell
-    # isn't eaten by the mode-enter touch; no pencil button (it would fill the
-    # cursor cell (0,0), wrong whenever board[0][0] is empty).
-    auto.fill(board, g, fill_button=None, swipe_runs=True)
+    # Fill cell-by-cell with individual, paced taps. A tap hits exactly one
+    # cell, so (unlike a run swipe) it can't bleed into the empty gap between
+    # two runs, and the pacing keeps the game from dropping or X-marking. Prime
+    # fill mode on the second cell so the first cell isn't eaten by the
+    # mode-enter touch; no pencil button (it would fill the cursor cell (0,0)).
+    auto.fill(board, g, fill_button=None, swipe_runs=False)
     for _ in range(3):
         if _won():
             return True
         actual = auto.read_board("/tmp/play.png", g, n=n)
         missing = [(i, j) for i in range(n) for j in range(n)
                    if board[i][j] == 1 and actual[i][j] != 1]
+        # Safety bound: a swipe-fill drops at most a few cells, so a large
+        # "missing" count means read_board is unreliable here (a dense board it
+        # can't classify). Tapping those would toggle correct cells off / to X
+        # and cascade -- so bail rather than wreck the board.
+        if not missing or len(missing) > max(4, n // 2):
+            break
         for i, j in missing:
             auto.tap(*auto.cell_center(g, i, j))
     return _won()
