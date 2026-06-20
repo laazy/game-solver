@@ -110,22 +110,27 @@ def _group_by_slot(glyphs, axis, ref, pitch):
     return [by_slot[s] for s in sorted(by_slot, reverse=True)]
 
 
-def _group_row(glyphs, x_ref, pitch, gap_merge=8):
+def _group_row(glyphs, x_ref, pitch, clf, n, gap_merge=8):
     """Group horizontal row clues left->right.
 
-    Two glyphs belong to the same number when they share a slot OR nearly
-    touch (gap < gap_merge). Slots alone split a two-digit number that is
-    wider than one slot (tight 20x20 grids); the touch rule rejoins it, while
-    the slot rule keeps distinct-but-close single-digit clues apart."""
+    Two glyphs join the same number when they share a slot OR nearly touch
+    (gap < gap_merge) AND the resulting value stays <= n (a clue can't exceed
+    the line length). The <=n guard is essential on tight 25x25 grids where
+    even distinct clues sit a few px apart: '5','1','0' must parse as '5','10'
+    (51>25 rejected) rather than merge into an impossible '510'."""
     glyphs = sorted(glyphs, key=lambda d: d["cx"])
     if not glyphs:
         return []
+    for g in glyphs:
+        g["_d"] = clf.classify(g["norm"])
     numbers = [[glyphs[0]]]
     for prev, g in zip(glyphs, glyphs[1:]):
         same_slot = (round((x_ref - prev["cx"]) / pitch)
                      == round((x_ref - g["cx"]) / pitch))
         touching = g["x0"] - prev["x1"] < gap_merge
-        if same_slot or touching:
+        cur = int("".join(str(x["_d"]) for x in numbers[-1]))
+        merged = int(f"{cur}{g['_d']}")
+        if (same_slot or touching) and merged <= n:
             numbers[-1].append(g)
         else:
             numbers.append([g])
@@ -199,7 +204,7 @@ def read_clues(img_path, g, clf=None):
         i = int(round((gl["cy"] - g["y0"]) / cell - 0.5))
         if 0 <= i < n:
             rows[i].append(gl)
-    row_info = [read_line(_group_row(r, g["x0"], pitch)) for r in rows]
+    row_info = [read_line(_group_row(r, g["x0"], pitch, clf, n)) for r in rows]
 
     return col_info, row_info
 
