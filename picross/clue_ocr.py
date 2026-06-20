@@ -191,11 +191,15 @@ def _group_row(glyphs, x_ref, pitch, clf, n, gap_merge=8):
     return numbers, split_gaps
 
 
-def _group_row_color(glyphs):
-    """Group a row's glyphs into numbers using the digit colour: a run of
-    consecutive yellow glyphs is a sequence of two-digit numbers (paired
-    left-to-right), each white glyph is its own single-digit number."""
-    glyphs = sorted(glyphs, key=lambda d: d["cx"])
+def _group_color(glyphs, vertical=False):
+    """Group a line's glyphs into numbers using the digit colour: a run of
+    consecutive yellow glyphs is a sequence of two-digit numbers (paired in
+    reading order), each white glyph is its own single-digit number. Works for
+    rows (left->right) and columns (top->bottom; a two-digit number's digits
+    share a y-level so they stay adjacent)."""
+    key = (lambda d: (round(d["cy"]), d["cx"])) if vertical else \
+          (lambda d: d["cx"])
+    glyphs = sorted(glyphs, key=key)
     numbers, i = [], 0
     while i < len(glyphs):
         if glyphs[i].get("yellow"):
@@ -329,17 +333,17 @@ def read_clues_full(img_path, g, clf=None):
         if 0 <= i < n:
             rows[i].append(gl)
 
+    # digit colour fixes the grouping for both axes -> only digit-swap repairs
     col_info, row_info, edits = [], [], []
     for j, c in enumerate(cols):
-        vals, e = _line_edits("col", j, _group_by_slot(c, "cy", g["y0"], pitch),
-                              [], n, clf)
+        vals, e = _line_edits("col", j, _group_color(c, vertical=True),
+                              [], n, clf, regroup=False)
         col_info.append(vals)
         edits += e
     row_digits = []
     for i, r in enumerate(rows):
-        # digit colour fixes the grouping -> only digit-swap repairs remain
-        groups = _group_row_color(r)
-        vals, e = _line_edits("row", i, groups, [], n, clf, regroup=False)
+        vals, e = _line_edits("row", i, _group_color(r), [], n, clf,
+                              regroup=False)
         row_info.append(vals)
         edits += e
         row_digits.append([clf.classify(gl["norm"])
