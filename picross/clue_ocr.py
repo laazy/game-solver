@@ -303,16 +303,22 @@ def _line_edits(side, idx, groups, gaps, n, clf, regroup=True):
                 left, right = int("".join(digs[:p])), int("".join(digs[p:]))
                 edits.append((ig + 30, side, idx,
                               values[:ci] + [left, right] + values[ci + 1:]))
-    for ci, rs in enumerate(ranked):        # re-classify an uncertain digit
+    for ci, rs in enumerate(ranked):        # re-classify a digit to a runner-up
         for p, r in enumerate(rs):
-            if len(r) < 2 or r[0][1] - r[1][1] > SWAP_MARGIN:
-                continue
-            digs = [str(t[0][0]) for t in rs]
-            digs[p] = str(r[1][0])
-            alt = int("".join(digs))
-            if 1 <= alt <= n:
-                edits.append((r[0][1] - r[1][1], side, idx,
-                              values[:ci] + [alt] + values[ci + 1:]))
+            # Emit a swap to the 2nd- and 3rd-best digit for every glyph, not
+            # just low-margin ones: the multi-prototype classifier is often
+            # very confident, so a wrong-but-confident read leaves no uncertain
+            # glyph -- yet the correct digit is still its runner-up. cost is the
+            # score margin, so genuinely uncertain glyphs still rank first.
+            for alt in (1, 2):
+                if len(r) <= alt:
+                    break
+                digs = [str(t[0][0]) for t in rs]
+                digs[p] = str(r[alt][0])
+                val = int("".join(digs))
+                if 1 <= val <= n:
+                    edits.append((r[0][1] - r[alt][1], side, idx,
+                                  values[:ci] + [val] + values[ci + 1:]))
     return values, edits
 
 
@@ -429,7 +435,12 @@ def solvable_clues(img_path, g, clf=None):
     repair swaps uncertain digits to their 2nd-best, using the solver as the
     oracle. Raises if nothing solves."""
     col, row, edits, _ = read_clues_full(img_path, g, clf)
-    res = _repair(col, row, g["n"], edits[:20], budget=[6000])
+    # Stage 1: any single swap that balances and solves -- iterating every
+    # glyph's runner-up is cheap (a consistency check, solving only on a match),
+    # so this catches a lone confident misread that has no "uncertain" edit.
+    res = _repair(col, row, g["n"], edits, budget=[8000], depth=1)
+    # Stage 2: combinations of the most-uncertain swaps for multi-digit errors.
+    res = res or _repair(col, row, g["n"], edits[:24], budget=[6000], depth=3)
     if res:
         return res
     raise AssertionError(

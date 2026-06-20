@@ -217,7 +217,7 @@ def _runs(board):
 
 
 def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
-         ms_per_cell=45, cursor=(0, 0)):
+         ms_per_cell=45):
     """Fill the solved board on screen.
 
     fill_button: (x,y) of the pencil/fill-mode button to activate first.
@@ -226,9 +226,10 @@ def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
                  single cells fall back to a tap.
     ms_per_cell: swipe duration scales with run length so a fast lift-off
                  doesn't drop the last cell of a run (observed failure mode).
-    cursor:      cell the selection starts on. Tapping it first only enters
-                 fill mode without filling, so it is filled last (once the
-                 cursor has moved elsewhere).
+
+    Tap-only fill (swipe_runs=False) primes fill mode with an extra tap on the
+    first cell: the first tap on a fresh puzzle only enters fill mode and fills
+    nothing, so without priming the first cell is dropped.
     """
     if fill_button:
         tap(*fill_button)
@@ -237,10 +238,18 @@ def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
     if not swipe_runs:
         cells = [(i, j) for i, col, length in _runs(board)
                  for j in range(col, col + length)]
-        if cells and cells[0] == tuple(cursor):
-            cells.append(cells.pop(0))     # fill the cursor cell last
-        for i, j in cells:
-            tap(*cell_center(g, i, j))
+        if cells:
+            # The first tap on a fresh puzzle only *enters* fill mode (it moves
+            # the cursor, fills nothing); every tap after that fills. So prime
+            # fill mode with a tap on the first cell, fill the rest, then fill
+            # that first cell LAST. Re-tapping it immediately would instead read
+            # as a double-tap (the X-mark gesture); spacing the two taps apart
+            # with the other cells avoids that and still fills it.
+            first = cells[0]
+            tap(*cell_center(g, *first))       # prime: enter fill mode only
+            for i, j in cells[1:]:
+                tap(*cell_center(g, i, j))
+            tap(*cell_center(g, *first))       # fill the primed cell last
         return
     for i, col, length in _runs(board):
         x0, y0 = cell_center(g, i, col)
