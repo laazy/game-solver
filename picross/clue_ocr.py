@@ -189,7 +189,7 @@ def _line_edits(side, idx, groups, gaps, n, clf):
     gap) and uncertain digits (re-classify to the 2nd-best -- cost is the
     score margin). Returns (values, edits)."""
     multi = len(groups) > 1
-    ranked, nums = [], []
+    ranked, igaps, nums = [], [], []
     for grp in groups:
         grp = sorted(grp, key=lambda d: d["cx"])
         rs = []
@@ -198,6 +198,8 @@ def _line_edits(side, idx, groups, gaps, n, clf):
             r = [t for t in clf.ranked(gl["norm"]) if t[0] not in forbid]
             rs.append(r or clf.ranked(gl["norm"]))
         ranked.append(rs)
+        igaps.append([grp[k + 1]["x0"] - grp[k]["x1"]
+                      for k in range(len(grp) - 1)])   # gaps within the number
         nums.append(int("".join(str(r[0][0]) for r in rs)))
 
     if any(v > n for v in nums):            # >n split shifts positions
@@ -213,6 +215,12 @@ def _line_edits(side, idx, groups, gaps, n, clf):
         if merged <= n:
             edits.append((gap, side, idx,
                           values[:pos] + [merged] + values[pos + 2:]))
+    for ci, rs in enumerate(ranked):        # re-split an over-merge (rarer ->
+        digs = [str(t[0][0]) for t in rs]   # cost penalty so it ranks last)
+        for p, ig in enumerate(igaps[ci], start=1):
+            left, right = int("".join(digs[:p])), int("".join(digs[p:]))
+            edits.append((ig + 30, side, idx,
+                          values[:ci] + [left, right] + values[ci + 1:]))
     for ci, rs in enumerate(ranked):        # re-classify an uncertain digit
         for p, r in enumerate(rs):
             if len(r) < 2 or r[0][1] - r[1][1] > SWAP_MARGIN:
@@ -284,7 +292,12 @@ def _repair(col, row, n, edits, budget, used=frozenset()):
     if clues_consistent(col, row):
         b = solver2.solve(col, row)
         return (col, row, b) if b else None
-    diff = abs(sum(map(sum, col)) - sum(map(sum, row)))
+
+    def measure(c, r):                       # weighted error: feasibility first
+        infeas = sum(1 for ln in c + r if sum(ln) + len(ln) - 1 > n)
+        return 1000 * infeas + abs(sum(map(sum, c)) - sum(map(sum, r)))
+
+    cur = measure(col, row)
     for _cost, side, li, new_line in edits:
         if (side, li) in used:
             continue
@@ -294,7 +307,10 @@ def _repair(col, row, n, edits, budget, used=frozenset()):
         else:
             ncol = [new_line if k == li else l for k, l in enumerate(col)]
             nrow = row
-        if abs(sum(map(sum, ncol)) - sum(map(sum, nrow))) >= diff:
+        # each edit must strictly reduce the weighted error (fixing an
+        # infeasible over-merged line outweighs widening the imbalance). This
+        # guarantees termination and keeps the search small.
+        if measure(ncol, nrow) >= cur:
             continue
         res = _repair(ncol, nrow, n, edits, budget, used | {(side, li)})
         if res:
@@ -307,7 +323,7 @@ def solvable_clues(img_path, g, clf=None):
     and uncertain-digit OCR errors using the solver as the oracle. Raises if no
     consistent, solvable reading is found."""
     col, row, edits = read_clues_full(img_path, g, clf)
-    res = _repair(col, row, g["n"], edits[:14], budget=[4000])
+    res = _repair(col, row, g["n"], edits[:20], budget=[6000])
     if res:
         return res
     raise AssertionError(
