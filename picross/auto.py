@@ -217,7 +217,7 @@ def _runs(board):
 
 
 def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
-         ms_per_cell=45):
+         ms_per_cell=45, cursor=(0, 0)):
     """Fill the solved board on screen.
 
     fill_button: (x,y) of the pencil/fill-mode button to activate first.
@@ -226,17 +226,26 @@ def fill(board, g, fill_button=None, first_tap=None, swipe_runs=True,
                  single cells fall back to a tap.
     ms_per_cell: swipe duration scales with run length so a fast lift-off
                  doesn't drop the last cell of a run (observed failure mode).
+    cursor:      cell the selection starts on. Tapping it first only enters
+                 fill mode without filling, so it is filled last (once the
+                 cursor has moved elsewhere).
     """
     if fill_button:
         tap(*fill_button)
     if first_tap:
         tap(*first_tap)
+    if not swipe_runs:
+        cells = [(i, j) for i, col, length in _runs(board)
+                 for j in range(col, col + length)]
+        if cells and cells[0] == tuple(cursor):
+            cells.append(cells.pop(0))     # fill the cursor cell last
+        for i, j in cells:
+            tap(*cell_center(g, i, j))
+        return
     for i, col, length in _runs(board):
         x0, y0 = cell_center(g, i, col)
-        if length == 1 or not swipe_runs:
-            for k in range(length):
-                cx, cy = cell_center(g, i, col + k)
-                tap(cx, cy)
+        if length == 1:
+            tap(x0, y0)
         else:
             x1, _ = cell_center(g, i, col + length - 1)
             swipe(x0, y0, x1, y0, ms=max(80, ms_per_cell * length))
@@ -378,9 +387,14 @@ def start_next(wait=1.5, max_steps=10):
             swipe(1100, 2545, 300, 2545, ms=400)
             time.sleep(wait)
             continue
-        # victory or galaxy: continue past it, then back toward level-select
+        # victory or galaxy: tap continue, then re-check. Only press back if
+        # still stuck on the galaxy view -- pressing back on level-select would
+        # pop the exit-confirm dialog (an extra, visible round trip).
         tap(*NAV["win_continue"])
         time.sleep(wait)
+        shot = screenshot("/tmp/_nav.png")
+        if in_puzzle(shot) or level_select(shot) or exit_dialog(shot):
+            continue
         back()
         time.sleep(wait)
     return in_puzzle(screenshot("/tmp/_nav.png"))

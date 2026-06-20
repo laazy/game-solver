@@ -66,7 +66,7 @@ def solve_current():
                    if board[i][j] == 1 and actual[i][j] != 1]
         for i, j in missing:
             auto.tap(*auto.cell_center(g, i, j))
-    return not in_puzzle(auto.screenshot("/tmp/play.png"))
+    return won()                            # final patient poll for the win
 
 
 def play_one():

@@ -117,24 +117,29 @@ def _group_row(glyphs, x_ref, pitch, clf, n, gap_merge=8):
     (gap < gap_merge) AND the resulting value stays <= n (a clue can't exceed
     the line length). The <=n guard is essential on tight 25x25 grids where
     even distinct clues sit a few px apart: '5','1','0' must parse as '5','10'
-    (51>25 rejected) rather than merge into an impossible '510'."""
+    (51>25 rejected) rather than merge into an impossible '510'.
+
+    Returns (numbers, split_gaps) where split_gaps[i] is the px gap at the
+    boundary after number i -- small gaps are likely mis-splits worth merging."""
     glyphs = sorted(glyphs, key=lambda d: d["cx"])
     if not glyphs:
-        return []
+        return [], []
     for g in glyphs:
         g["_d"] = clf.classify(g["norm"])
     numbers = [[glyphs[0]]]
+    split_gaps = []
     for prev, g in zip(glyphs, glyphs[1:]):
+        gap = g["x0"] - prev["x1"]
         same_slot = (round((x_ref - prev["cx"]) / pitch)
                      == round((x_ref - g["cx"]) / pitch))
-        touching = g["x0"] - prev["x1"] < gap_merge
         cur = int("".join(str(x["_d"]) for x in numbers[-1]))
         merged = int(f"{cur}{g['_d']}")
-        if (same_slot or touching) and merged <= n:
+        if (same_slot or gap < gap_merge) and merged <= n:
             numbers[-1].append(g)
         else:
             numbers.append([g])
-    return numbers
+            split_gaps.append(gap)
+    return numbers, split_gaps
 
 
 def _drop_header(glyphs, max_gap=70):
@@ -165,14 +170,26 @@ def _digits_to_number(group, clf, forbid_zero=False):
 
 # ------------------------------------------------------------------ public API
 def read_clues(img_path, g, clf=None):
-    """Return (col_info, row_info) read from a fresh-puzzle screenshot.
+    """Return (col_info, row_info). See read_clues_full for merge candidates."""
+    col_info, row_info, _ = read_clues_full(img_path, g, clf)
+    return col_info, row_info
 
-    g: grid dict from auto.detect_grid (needs x0,y0,x1,y1,cell,n).
-    """
+
+def read_clues_full(img_path, g, clf=None):
+    """Return (col_info, row_info, row_candidates). Each candidate is
+    (row_idx, clue_pos, gap_px): a row split with a small visual gap that is a
+    likely mis-split of a two-digit clue, used by the solver-oracle repair."""
     clf = clf or Classifier()
     lu = luma_of(img_path)
     n = g["n"]
     cell = g["cell"]
+    pitch = cell / 2
+
+    def finalize(nums):
+        out = []
+        for v in nums:
+            out.extend(int(d) for d in str(v)) if v > n else out.append(v)
+        return out or [0]
 
     # column clues: region above the grid, within its x-span
     top = _drop_header(extract_glyphs(lu, int(g["x0"]), int(g["x1"]),
@@ -182,20 +199,13 @@ def read_clues(img_path, g, clf=None):
         j = int(round((gl["cx"] - g["x0"]) / cell - 0.5))
         if 0 <= j < n:
             cols[j].append(gl)
-    pitch = cell / 2
 
-    def read_line(groups):
+    def col_values(groups):
         multi = len(groups) > 1
-        nums = [_digits_to_number(grp, clf, forbid_zero=multi)
-                for grp in groups]
-        # a single clue can never exceed the line length n; a too-big value is
-        # an over-merge of adjacent clues -> split it back into its digits
-        out = []
-        for v in nums:
-            out.extend(int(d) for d in str(v)) if v > n else out.append(v)
-        return out or [0]
+        return [_digits_to_number(grp, clf, forbid_zero=multi) for grp in groups]
 
-    col_info = [read_line(_group_by_slot(c, "cy", g["y0"], pitch)) for c in cols]
+    col_info = [finalize(col_values(_group_by_slot(c, "cy", g["y0"], pitch)))
+                for c in cols]
 
     # row clues: region left of the grid, within its y-span
     left = extract_glyphs(lu, 0, int(g["x0"]), int(g["y0"]), int(g["y1"]))
@@ -204,9 +214,21 @@ def read_clues(img_path, g, clf=None):
         i = int(round((gl["cy"] - g["y0"]) / cell - 0.5))
         if 0 <= i < n:
             rows[i].append(gl)
-    row_info = [read_line(_group_row(r, g["x0"], pitch, clf, n)) for r in rows]
 
-    return col_info, row_info
+    row_info = []
+    candidates = []
+    for i, r in enumerate(rows):
+        groups, gaps = _group_row(r, g["x0"], pitch, clf, n)
+        multi = len(groups) > 1
+        nums = [_digits_to_number(grp, clf, forbid_zero=multi) for grp in groups]
+        # only track candidates when no >n split shifts positions
+        if not any(v > n for v in nums):
+            for pos, gap in enumerate(gaps):
+                candidates.append((i, pos, gap))
+        row_info.append(finalize(nums))
+
+    candidates.sort(key=lambda c: c[2])     # smallest gap first = likeliest
+    return col_info, row_info, candidates
 
 
 def clues_consistent(col_info, row_info):
@@ -214,40 +236,59 @@ def clues_consistent(col_info, row_info):
     return sum(sum(c) for c in col_info) == sum(sum(r) for r in row_info)
 
 
-def _merge_variants(info, n):
-    """Yield copies of `info` (list of lines) with one adjacent clue pair in
-    one line merged into a two-digit number (<= n). Recovers a two-digit clue
-    that OCR split into separate digits."""
-    for li, line in enumerate(info):
-        for k in range(len(line) - 1):
-            merged = int(f"{line[k]}{line[k + 1]}")
-            if merged <= n:
-                new = list(line[:k]) + [merged] + list(line[k + 2:])
-                yield [new if i == li else l for i, l in enumerate(info)]
+def _repair(col, row, n, candidates, budget):
+    """Find a consistent, solvable reading by un-splitting mis-split two-digit
+    clues. When rows are short (cols sum higher) we re-merge row clues at the
+    smallest-gap split points first (the likeliest mis-splits); when columns
+    are short we fall back to trying column merges. budget caps solve calls.
+    Returns (col, row, board) or None."""
+    import solver2
+    if clues_consistent(col, row):
+        if budget[0] > 0:
+            budget[0] -= 1
+            b = solver2.solve(col, row)
+            if b:
+                return col, row, b
+        return None
+    if budget[0] <= 0:
+        return None
+    diff = sum(map(sum, col)) - sum(map(sum, row))
+    if diff > 0:                              # rows short: merge row clues
+        for idx, (ri, pos, _gap) in enumerate(candidates):
+            line = row[ri]
+            if pos + 1 >= len(line):
+                continue
+            merged = int(f"{line[pos]}{line[pos + 1]}")
+            if merged > n:
+                continue
+            new = line[:pos] + [merged] + line[pos + 2:]
+            nrow = [new if k == ri else l for k, l in enumerate(row)]
+            rem = [c for c in candidates[idx + 1:] if c[0] != ri]
+            res = _repair(col, nrow, n, rem, budget)
+            if res:
+                return res
+    elif diff < 0:                            # cols short: merge col clues
+        for ci, line in enumerate(col):
+            for p in range(len(line) - 1):
+                merged = int(f"{line[p]}{line[p + 1]}")
+                if merged > n:
+                    continue
+                new = line[:p] + [merged] + line[p + 2:]
+                ncol = [new if k == ci else l for k, l in enumerate(col)]
+                res = _repair(ncol, row, n, candidates, budget)
+                if res:
+                    return res
+    return None
 
 
 def solvable_clues(img_path, g, clf=None):
-    """Read clues and return (col_info, row_info, board), repairing a single
-    split/merge OCR error using the solver as the oracle. Raises if no
+    """Read clues and return (col_info, row_info, board), repairing mis-split
+    two-digit OCR errors using the solver as the oracle. Raises if no
     consistent, solvable reading is found."""
-    import solver2
-    col, row = read_clues(img_path, g, clf)
-    n = g["n"]
-    if clues_consistent(col, row):
-        b = solver2.solve(col, row)
-        if b:
-            return col, row, b
-    # one mis-split two-digit clue: try merging a pair in some row or column
-    for nrow in _merge_variants(row, n):
-        if clues_consistent(col, nrow):
-            b = solver2.solve(col, nrow)
-            if b:
-                return col, nrow, b
-    for ncol in _merge_variants(col, n):
-        if clues_consistent(ncol, row):
-            b = solver2.solve(ncol, row)
-            if b:
-                return ncol, row, b
+    col, row, candidates = read_clues_full(img_path, g, clf)
+    res = _repair(col, row, g["n"], candidates, budget=[400])
+    if res:
+        return res
     raise AssertionError(
         f"unsolvable OCR (col_sum={sum(map(sum, col))} "
         f"row_sum={sum(map(sum, row))})")
