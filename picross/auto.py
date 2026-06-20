@@ -29,7 +29,7 @@ NAV = {
     "dialog_cancel": (1160, 1868),    # "取消" on the exit-confirm dialog
     "tile_xs": [143, 373, 603, 833, 1063, 1293],  # level-select tile columns
     "tile_ys": [2420, 2678],                       # level-select tile rows
-    "tile_open_frac": 0.18,           # light-fraction below -> unplayed tile
+    "tile_open_frac": 0.13,           # warm-fraction below -> unplayed tile
     "scroll_right": (1417, 2545),     # ">" to page the level list forward
 }
 
@@ -317,21 +317,30 @@ def back():
     _sh("shell", "input", "keyevent", "KEYCODE_BACK")
 
 
-def _light_frac(px, cx, cy, r=70, step=10, thr=150):
-    vals = [_luma(px[cx + dx, cy + dy])
-            for dx in range(-r, r + 1, step) for dy in range(-r, r + 1, step)]
-    return sum(v > thr for v in vals) / len(vals)
+def _warm_frac(px, cx, cy, r=85, step=8):
+    """Fraction of warm/cream pixels over a tile. Completed-level tiles sit on
+    a cream picture background; unplayed tiles are dark navy with white text.
+    Luma alone fails here -- a mostly-black picture (e.g. a cat) is as dim as
+    an unplayed tile, but its cream background still reads warm."""
+    warm = total = 0
+    for dx in range(-r, r + 1, step):
+        for dy in range(-r, r + 1, step):
+            R, G, B = px[cx + dx, cy + dy]
+            total += 1
+            if R > 150 and G > 140 and B > 120 and R >= B:
+                warm += 1
+    return warm / total
 
 
 def find_next_tile(img_path):
     """On the level-select screen, return the (x,y) of the first unplayed
-    tile (row-major). Completed tiles show a bright picture; unplayed tiles
-    are dark with a dimension label. Returns None if none visible."""
+    tile (row-major). Completed tiles show a cream picture; unplayed tiles are
+    dark with a dimension label. Returns None if none visible."""
     im = Image.open(img_path).convert("RGB")
     px = im.load()
     for y in NAV["tile_ys"]:
         for x in NAV["tile_xs"]:
-            if _light_frac(px, x, y) < NAV["tile_open_frac"]:
+            if _warm_frac(px, x, y) < NAV["tile_open_frac"]:
                 return (x, y)
     return None
 
@@ -387,14 +396,9 @@ def start_next(wait=1.5, max_steps=10):
             swipe(1100, 2545, 300, 2545, ms=400)
             time.sleep(wait)
             continue
-        # victory or galaxy: tap continue, then re-check. Only press back if
-        # still stuck on the galaxy view -- pressing back on level-select would
-        # pop the exit-confirm dialog (an extra, visible round trip).
-        tap(*NAV["win_continue"])
-        time.sleep(wait)
-        shot = screenshot("/tmp/_nav.png")
-        if in_puzzle(shot) or level_select(shot) or exit_dialog(shot):
-            continue
+        # victory or galaxy: back out toward level-select. Back works from
+        # both and avoids the victory buttons, whose layout shifts (a replay
+        # screen inserts a "retry" button where continue usually sits).
         back()
         time.sleep(wait)
     return in_puzzle(screenshot("/tmp/_nav.png"))
