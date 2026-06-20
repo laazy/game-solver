@@ -64,10 +64,12 @@ def _split_wide(box, x0, y0, unit):
     return pieces
 
 
-def extract_glyphs(luma, x0, x1, y0, y1, thr=THR):
+def extract_glyphs(luma, x0, x1, y0, y1, thr=THR, rgb=None):
     """Connected-component glyph boxes within a region, with normalized bmp.
     Over-wide components (adjacent digits that touch on small grids) are split
-    into single digits at their sparsest columns."""
+    into single digits at their sparsest columns. When `rgb` is given, each
+    glyph gets a 'yellow' flag: the game colors two-digit-clue digits yellow
+    and single-digit clues white, which fixes the grouping with no guessing."""
     binm = luma[y0:y1, x0:x1] > thr
     lbl, _ = ndimage.label(binm)
     boxes = []
@@ -86,11 +88,18 @@ def extract_glyphs(luma, x0, x1, y0, y1, thr=THR):
         # is near-square or wider is two touching digits -> split it
         wide = box[0].shape[1] > 0.95 * box[0].shape[0]
         for bmp, bx, by in (_split_wide(box, x0, y0, unit) if wide else [box]):
-            out.append({
-                "x0": x0 + bx, "x1": x0 + bx + bmp.shape[1],
-                "cx": x0 + bx + bmp.shape[1] / 2, "cy": y0 + by + bmp.shape[0] / 2,
-                "norm": _normalize(bmp),
-            })
+            gx0, gy0 = x0 + bx, y0 + by
+            d = {"x0": gx0, "x1": gx0 + bmp.shape[1],
+                 "cx": gx0 + bmp.shape[1] / 2, "cy": gy0 + bmp.shape[0] / 2,
+                 "norm": _normalize(bmp)}
+            if rgb is not None:
+                sub = rgb[gy0:gy0 + bmp.shape[0], gx0:gx0 + bmp.shape[1]]
+                fg = sub[bmp]                       # ink pixels of this glyph
+                # real two-digit ink is strongly yellow (G-B ~200); the cursor
+                # highlight only tints white digits faintly (G-B ~45)
+                d["yellow"] = bool(len(fg) and
+                                   fg[:, 1].mean() - fg[:, 2].mean() > 120)
+            out.append(d)
     return out
 
 
@@ -182,6 +191,26 @@ def _group_row(glyphs, x_ref, pitch, clf, n, gap_merge=8):
     return numbers, split_gaps
 
 
+def _group_row_color(glyphs):
+    """Group a row's glyphs into numbers using the digit colour: a run of
+    consecutive yellow glyphs is a sequence of two-digit numbers (paired
+    left-to-right), each white glyph is its own single-digit number."""
+    glyphs = sorted(glyphs, key=lambda d: d["cx"])
+    numbers, i = [], 0
+    while i < len(glyphs):
+        if glyphs[i].get("yellow"):
+            run = []
+            while i < len(glyphs) and glyphs[i].get("yellow"):
+                run.append(glyphs[i])
+                i += 1
+            for k in range(0, len(run), 2):
+                numbers.append(run[k:k + 2])          # one two-digit number
+        else:
+            numbers.append([glyphs[i]])
+            i += 1
+    return numbers
+
+
 def _drop_header(glyphs, max_gap=70):
     """Keep only the clue block nearest the grid, dropping the title/HINT row.
 
@@ -211,20 +240,22 @@ def _digits_to_number(group, clf, forbid_zero=False):
 # ------------------------------------------------------------------ public API
 def read_clues(img_path, g, clf=None):
     """Return (col_info, row_info). See read_clues_full for merge candidates."""
-    col_info, row_info, _ = read_clues_full(img_path, g, clf)
+    col_info, row_info, _, _ = read_clues_full(img_path, g, clf)
     return col_info, row_info
 
 
 SWAP_MARGIN = 40          # score gap below which a glyph's reading is uncertain
 
 
-def _line_edits(side, idx, groups, gaps, n, clf):
+def _line_edits(side, idx, groups, gaps, n, clf, regroup=True):
     """Read one line's clue values and the candidate repair edits for it.
 
     Each edit is (cost, side, idx, new_line): a smaller cost is a likelier
     OCR error. Edits cover mis-splits (re-merge two clues -- cost is the px
     gap) and uncertain digits (re-classify to the 2nd-best -- cost is the
-    score margin). Returns (values, edits)."""
+    score margin). With regroup=False the grouping is trusted (e.g. fixed by
+    digit colour) and only digit-swap edits are produced. Returns
+    (values, edits)."""
     multi = len(groups) > 1
     ranked, igaps, nums = [], [], []
     for grp in groups:
@@ -247,17 +278,18 @@ def _line_edits(side, idx, groups, gaps, n, clf):
 
     values = nums or [0]
     edits = []
-    for pos, gap in enumerate(gaps):        # re-merge a mis-split
-        merged = int(f"{values[pos]}{values[pos + 1]}")
-        if merged <= n:
-            edits.append((gap, side, idx,
-                          values[:pos] + [merged] + values[pos + 2:]))
-    for ci, rs in enumerate(ranked):        # re-split an over-merge (rarer ->
-        digs = [str(t[0][0]) for t in rs]   # cost penalty so it ranks last)
-        for p, ig in enumerate(igaps[ci], start=1):
-            left, right = int("".join(digs[:p])), int("".join(digs[p:]))
-            edits.append((ig + 30, side, idx,
-                          values[:ci] + [left, right] + values[ci + 1:]))
+    if regroup:
+        for pos, gap in enumerate(gaps):    # re-merge a mis-split
+            merged = int(f"{values[pos]}{values[pos + 1]}")
+            if merged <= n:
+                edits.append((gap, side, idx,
+                              values[:pos] + [merged] + values[pos + 2:]))
+        for ci, rs in enumerate(ranked):    # re-split an over-merge (rarer ->
+            digs = [str(t[0][0]) for t in rs]   # cost penalty -> ranks last)
+            for p, ig in enumerate(igaps[ci], start=1):
+                left, right = int("".join(digs[:p])), int("".join(digs[p:]))
+                edits.append((ig + 30, side, idx,
+                              values[:ci] + [left, right] + values[ci + 1:]))
     for ci, rs in enumerate(ranked):        # re-classify an uncertain digit
         for p, r in enumerate(rs):
             if len(r) < 2 or r[0][1] - r[1][1] > SWAP_MARGIN:
@@ -277,18 +309,20 @@ def read_clues_full(img_path, g, clf=None):
     first, for the solver-oracle repair."""
     clf = clf or Classifier()
     lu = luma_of(img_path)
+    rgb = np.asarray(Image.open(img_path).convert("RGB")).astype(np.int32)
     n, cell = g["n"], g["cell"]
     pitch = cell / 2
 
     top = _drop_header(extract_glyphs(lu, int(g["x0"]), int(g["x1"]),
-                                      0, int(g["y0"])))
+                                      0, int(g["y0"]), rgb=rgb))
     cols = [[] for _ in range(n)]
     for gl in top:
         j = int(round((gl["cx"] - g["x0"]) / cell - 0.5))
         if 0 <= j < n:
             cols[j].append(gl)
 
-    left = extract_glyphs(lu, 0, int(g["x0"]), int(g["y0"]), int(g["y1"]))
+    left = extract_glyphs(lu, 0, int(g["x0"]), int(g["y0"]), int(g["y1"]),
+                          rgb=rgb)
     rows = [[] for _ in range(n)]
     for gl in left:
         i = int(round((gl["cy"] - g["y0"]) / cell - 0.5))
@@ -301,14 +335,18 @@ def read_clues_full(img_path, g, clf=None):
                               [], n, clf)
         col_info.append(vals)
         edits += e
+    row_digits = []
     for i, r in enumerate(rows):
-        groups, gaps = _group_row(r, g["x0"], pitch, clf, n)
-        vals, e = _line_edits("row", i, groups, gaps, n, clf)
+        # digit colour fixes the grouping -> only digit-swap repairs remain
+        groups = _group_row_color(r)
+        vals, e = _line_edits("row", i, groups, [], n, clf, regroup=False)
         row_info.append(vals)
         edits += e
+        row_digits.append([clf.classify(gl["norm"])
+                           for gl in sorted(r, key=lambda d: d["cx"])])
 
     edits.sort(key=lambda e: e[0])          # smallest cost first = likeliest
-    return col_info, row_info, edits
+    return col_info, row_info, edits, row_digits
 
 
 def clues_consistent(col_info, row_info):
@@ -316,50 +354,68 @@ def clues_consistent(col_info, row_info):
     return sum(sum(c) for c in col_info) == sum(sum(r) for r in row_info)
 
 
-def _repair(col, row, n, edits, budget, used=frozenset()):
+def _repair(col, row, n, edits, budget, used=frozenset(), depth=3):
     """Find a consistent, solvable reading by applying candidate repair edits
-    (re-merges and digit swaps) likeliest-first, using the solver as oracle.
-    Each edit must reduce the row/col sum imbalance (so the search terminates)
-    and at most one edit applies per line. budget bounds the whole search.
-    Returns (col, row, board) or None."""
+    (digit swaps -- colour already fixed the grouping) likeliest-first, using
+    the solver as oracle. Explores combinations up to `depth` edits (one per
+    line) so it can fix several mis-read digits whose errors keep the sums
+    balanced. budget bounds the solve calls. Returns (col, row, board)/None."""
     import solver2
-    budget[0] -= 1
-    if budget[0] <= 0:
-        return None
     if clues_consistent(col, row):
+        budget[0] -= 1
         b = solver2.solve(col, row)
-        return (col, row, b) if b else None
-
-    def measure(c, r):                       # weighted error: feasibility first
-        infeas = sum(1 for ln in c + r if sum(ln) + len(ln) - 1 > n)
-        return 1000 * infeas + abs(sum(map(sum, c)) - sum(map(sum, r)))
-
-    cur = measure(col, row)
+        if b:
+            return col, row, b              # consistent + solvable -> done
+        # consistent but unsolvable: a mis-read digit remains -> keep editing
+    if depth <= 0 or budget[0] <= 0:
+        return None
     for _cost, side, li, new_line in edits:
-        if (side, li) in used:
+        if (side, li) in used or sum(new_line) + len(new_line) - 1 > n:
             continue
         if side == "row":
-            ncol = col
-            nrow = [new_line if k == li else l for k, l in enumerate(row)]
+            ncol, nrow = col, [new_line if k == li else l
+                               for k, l in enumerate(row)]
         else:
-            ncol = [new_line if k == li else l for k, l in enumerate(col)]
-            nrow = row
-        # each edit must strictly reduce the weighted error (fixing an
-        # infeasible over-merged line outweighs widening the imbalance). This
-        # guarantees termination and keeps the search small.
-        if measure(ncol, nrow) >= cur:
-            continue
-        res = _repair(ncol, nrow, n, edits, budget, used | {(side, li)})
+            ncol, nrow = [new_line if k == li else l
+                          for k, l in enumerate(col)], row
+        res = _repair(ncol, nrow, n, edits, budget,
+                      used | {(side, li)}, depth - 1)
         if res:
             return res
     return None
 
 
+def _line_groupings(digits, n):
+    """Every feasible way to read a digit sequence as a clue line: each number
+    is 1-2 digits and <= n, no standalone 0 among other clues, and the line
+    fits (sum + gaps <= n). Used when local spacing can't be trusted."""
+    if not digits:
+        return [[0]]
+    k = len(digits)
+    out = []
+
+    def rec(i, cur):
+        if i == k:
+            if sum(cur) + len(cur) - 1 <= n and not (0 in cur and len(cur) > 1):
+                out.append(cur)
+            return
+        rec(i + 1, cur + [digits[i]])                  # digit i on its own
+        if i + 1 < k and digits[i] != 0:               # digits i,i+1 as one number
+            v = digits[i] * 10 + digits[i + 1]
+            if v <= n:
+                rec(i + 2, cur + [v])
+
+    rec(0, [])
+    return out or [[0]]
+
+
+
 def solvable_clues(img_path, g, clf=None):
-    """Read clues and return (col_info, row_info, board), repairing mis-split
-    and uncertain-digit OCR errors using the solver as the oracle. Raises if no
-    consistent, solvable reading is found."""
-    col, row, edits = read_clues_full(img_path, g, clf)
+    """Read clues and return (col_info, row_info, board). Digit colour fixes
+    the grouping, so only digit-classification errors remain -- the per-line
+    repair swaps uncertain digits to their 2nd-best, using the solver as the
+    oracle. Raises if nothing solves."""
+    col, row, edits, _ = read_clues_full(img_path, g, clf)
     res = _repair(col, row, g["n"], edits[:20], budget=[6000])
     if res:
         return res
