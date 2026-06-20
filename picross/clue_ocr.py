@@ -39,21 +39,58 @@ def _normalize(bmp):
     return np.asarray(canvas) > 127
 
 
+def _split_wide(box, x0, y0, unit):
+    """Split a too-wide glyph box (touching digits, common on 25x25) at the
+    sparsest interior column(s) into `unit`-wide pieces. box is (bmp, bx, by)."""
+    bmp, bx, by = box
+    w = bmp.shape[1]
+    k = round(w / unit)
+    if k < 2:
+        return [box]
+    colsum = bmp.sum(axis=0)
+    cuts, lo = [], 0
+    for part in range(1, k):
+        target = round(part * w / k)
+        win = range(max(lo + 4, target - 6), min(w - 4, target + 7))
+        c = min(win, key=lambda c: colsum[c], default=target)
+        cuts.append(c)
+        lo = c
+    pieces, prev = [], 0
+    for c in cuts + [w]:
+        sub = bmp[:, prev:c]
+        if sub.any():
+            pieces.append((sub, bx + prev, by))
+        prev = c
+    return pieces
+
+
 def extract_glyphs(luma, x0, x1, y0, y1, thr=THR):
-    """Connected-component glyph boxes within a region, with normalized bmp."""
+    """Connected-component glyph boxes within a region, with normalized bmp.
+    Over-wide components (adjacent digits that touch on small grids) are split
+    into single digits at their sparsest columns."""
     binm = luma[y0:y1, x0:x1] > thr
     lbl, _ = ndimage.label(binm)
-    out = []
+    boxes = []
     for sl in ndimage.find_objects(lbl):
         ys, xs = sl
         h, w = ys.stop - ys.start, xs.stop - xs.start
         if h < 12 or h > 60 or w < 4 or w > 60 or int(binm[sl].sum()) < 20:
             continue
-        out.append({
-            "x0": x0 + xs.start, "x1": x0 + xs.stop,
-            "cx": x0 + xs.start + w / 2, "cy": y0 + ys.start + h / 2,
-            "norm": _normalize(binm[sl]),
-        })
+        boxes.append((binm[sl], xs.start, ys.start))
+    if not boxes:
+        return []
+    unit = sorted(b[0].shape[1] for b in boxes)[len(boxes) // 2]   # median width
+    out = []
+    for box in boxes:
+        # a single digit is always taller than wide (w/h <= ~0.8); a box that
+        # is near-square or wider is two touching digits -> split it
+        wide = box[0].shape[1] > 0.95 * box[0].shape[0]
+        for bmp, bx, by in (_split_wide(box, x0, y0, unit) if wide else [box]):
+            out.append({
+                "x0": x0 + bx, "x1": x0 + bx + bmp.shape[1],
+                "cx": x0 + bx + bmp.shape[1] / 2, "cy": y0 + by + bmp.shape[0] / 2,
+                "norm": _normalize(bmp),
+            })
     return out
 
 
