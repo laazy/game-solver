@@ -132,11 +132,20 @@ class Classifier:
         self.keys, self.templates = load_model(path)
 
     def ranked(self, norm_bmp):
-        """Digits ranked best-first, as [(digit, score), ...]."""
+        """Digits ranked best-first, as [(digit, score), ...].
+
+        The model is multi-prototype: a digit may have several templates (e.g.
+        a 15/25 mean plus a 30x30-scale mean), so its score is the best match
+        over its prototypes. This keeps small-grid digits (where one mean blurs,
+        notably '0' in 10/20/30) recognizable without disturbing larger sizes."""
         s = _signed(norm_bmp)
         scores = (self.templates * s).reshape(len(self.keys), -1).sum(axis=1)
-        return [(int(self.keys[int(i)]), float(scores[int(i)]))
-                for i in scores.argsort()[::-1]]
+        best = {}
+        for i, sc in enumerate(scores):
+            d = int(self.keys[i])
+            if d not in best or sc > best[d]:
+                best[d] = float(sc)
+        return sorted(best.items(), key=lambda kv: kv[1], reverse=True)
 
     def classify(self, norm_bmp, forbid=()):
         for d, _ in self.ranked(norm_bmp):
