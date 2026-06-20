@@ -85,15 +85,18 @@ class Classifier:
     def __init__(self, path=MODEL_PATH):
         self.keys, self.templates = load_model(path)
 
-    def classify(self, norm_bmp, forbid=()):
+    def ranked(self, norm_bmp):
+        """Digits ranked best-first, as [(digit, score), ...]."""
         s = _signed(norm_bmp)
         scores = (self.templates * s).reshape(len(self.keys), -1).sum(axis=1)
-        order = scores.argsort()[::-1]
-        for idx in order:
-            d = int(self.keys[int(idx)])
+        return [(int(self.keys[int(i)]), float(scores[int(i)]))
+                for i in scores.argsort()[::-1]]
+
+    def classify(self, norm_bmp, forbid=()):
+        for d, _ in self.ranked(norm_bmp):
             if d not in forbid:
                 return d
-        return int(self.keys[int(order[0])])
+        return self.ranked(norm_bmp)[0][0]
 
 
 # -------------------------------------------------------------------- grouping
@@ -175,23 +178,63 @@ def read_clues(img_path, g, clf=None):
     return col_info, row_info
 
 
-def read_clues_full(img_path, g, clf=None):
-    """Return (col_info, row_info, row_candidates). Each candidate is
-    (row_idx, clue_pos, gap_px): a row split with a small visual gap that is a
-    likely mis-split of a two-digit clue, used by the solver-oracle repair."""
-    clf = clf or Classifier()
-    lu = luma_of(img_path)
-    n = g["n"]
-    cell = g["cell"]
-    pitch = cell / 2
+SWAP_MARGIN = 40          # score gap below which a glyph's reading is uncertain
 
-    def finalize(nums):
+
+def _line_edits(side, idx, groups, gaps, n, clf):
+    """Read one line's clue values and the candidate repair edits for it.
+
+    Each edit is (cost, side, idx, new_line): a smaller cost is a likelier
+    OCR error. Edits cover mis-splits (re-merge two clues -- cost is the px
+    gap) and uncertain digits (re-classify to the 2nd-best -- cost is the
+    score margin). Returns (values, edits)."""
+    multi = len(groups) > 1
+    ranked, nums = [], []
+    for grp in groups:
+        grp = sorted(grp, key=lambda d: d["cx"])
+        rs = []
+        for k, gl in enumerate(grp):
+            forbid = (0,) if (multi or k == 0) and len(grp) == 1 else ()
+            r = [t for t in clf.ranked(gl["norm"]) if t[0] not in forbid]
+            rs.append(r or clf.ranked(gl["norm"]))
+        ranked.append(rs)
+        nums.append(int("".join(str(r[0][0]) for r in rs)))
+
+    if any(v > n for v in nums):            # >n split shifts positions
         out = []
         for v in nums:
             out.extend(int(d) for d in str(v)) if v > n else out.append(v)
-        return out or [0]
+        return out or [0], []
 
-    # column clues: region above the grid, within its x-span
+    values = nums or [0]
+    edits = []
+    for pos, gap in enumerate(gaps):        # re-merge a mis-split
+        merged = int(f"{values[pos]}{values[pos + 1]}")
+        if merged <= n:
+            edits.append((gap, side, idx,
+                          values[:pos] + [merged] + values[pos + 2:]))
+    for ci, rs in enumerate(ranked):        # re-classify an uncertain digit
+        for p, r in enumerate(rs):
+            if len(r) < 2 or r[0][1] - r[1][1] > SWAP_MARGIN:
+                continue
+            digs = [str(t[0][0]) for t in rs]
+            digs[p] = str(r[1][0])
+            alt = int("".join(digs))
+            if 1 <= alt <= n:
+                edits.append((r[0][1] - r[1][1], side, idx,
+                              values[:ci] + [alt] + values[ci + 1:]))
+    return values, edits
+
+
+def read_clues_full(img_path, g, clf=None):
+    """Return (col_info, row_info, edits): clue lists plus candidate repair
+    edits (mis-split re-merges and uncertain-digit swaps), sorted likeliest
+    first, for the solver-oracle repair."""
+    clf = clf or Classifier()
+    lu = luma_of(img_path)
+    n, cell = g["n"], g["cell"]
+    pitch = cell / 2
+
     top = _drop_header(extract_glyphs(lu, int(g["x0"]), int(g["x1"]),
                                       0, int(g["y0"])))
     cols = [[] for _ in range(n)]
@@ -200,14 +243,6 @@ def read_clues_full(img_path, g, clf=None):
         if 0 <= j < n:
             cols[j].append(gl)
 
-    def col_values(groups):
-        multi = len(groups) > 1
-        return [_digits_to_number(grp, clf, forbid_zero=multi) for grp in groups]
-
-    col_info = [finalize(col_values(_group_by_slot(c, "cy", g["y0"], pitch)))
-                for c in cols]
-
-    # row clues: region left of the grid, within its y-span
     left = extract_glyphs(lu, 0, int(g["x0"]), int(g["y0"]), int(g["y1"]))
     rows = [[] for _ in range(n)]
     for gl in left:
@@ -215,20 +250,20 @@ def read_clues_full(img_path, g, clf=None):
         if 0 <= i < n:
             rows[i].append(gl)
 
-    row_info = []
-    candidates = []
+    col_info, row_info, edits = [], [], []
+    for j, c in enumerate(cols):
+        vals, e = _line_edits("col", j, _group_by_slot(c, "cy", g["y0"], pitch),
+                              [], n, clf)
+        col_info.append(vals)
+        edits += e
     for i, r in enumerate(rows):
         groups, gaps = _group_row(r, g["x0"], pitch, clf, n)
-        multi = len(groups) > 1
-        nums = [_digits_to_number(grp, clf, forbid_zero=multi) for grp in groups]
-        # only track candidates when no >n split shifts positions
-        if not any(v > n for v in nums):
-            for pos, gap in enumerate(gaps):
-                candidates.append((i, pos, gap))
-        row_info.append(finalize(nums))
+        vals, e = _line_edits("row", i, groups, gaps, n, clf)
+        row_info.append(vals)
+        edits += e
 
-    candidates.sort(key=lambda c: c[2])     # smallest gap first = likeliest
-    return col_info, row_info, candidates
+    edits.sort(key=lambda e: e[0])          # smallest cost first = likeliest
+    return col_info, row_info, edits
 
 
 def clues_consistent(col_info, row_info):
@@ -236,54 +271,43 @@ def clues_consistent(col_info, row_info):
     return sum(sum(c) for c in col_info) == sum(sum(r) for r in row_info)
 
 
-def _repair(col, row, n, candidates, budget):
-    """Find a consistent, solvable reading by un-splitting mis-split two-digit
-    clues. When rows are short (cols sum higher) we re-merge row clues at the
-    smallest-gap split points first (the likeliest mis-splits); when columns
-    are short we fall back to trying column merges. budget caps solve calls.
+def _repair(col, row, n, edits, budget, used=frozenset()):
+    """Find a consistent, solvable reading by applying candidate repair edits
+    (re-merges and digit swaps) likeliest-first, using the solver as oracle.
+    Each edit must reduce the row/col sum imbalance (so the search terminates)
+    and at most one edit applies per line. budget bounds the whole search.
     Returns (col, row, board) or None."""
     import solver2
-    budget[0] -= 1                            # bound every call, not just solves
+    budget[0] -= 1
     if budget[0] <= 0:
         return None
     if clues_consistent(col, row):
         b = solver2.solve(col, row)
         return (col, row, b) if b else None
-    diff = sum(map(sum, col)) - sum(map(sum, row))
-    if diff > 0:                              # rows short: merge row clues
-        for idx, (ri, pos, _gap) in enumerate(candidates):
-            line = row[ri]
-            if pos + 1 >= len(line):
-                continue
-            merged = int(f"{line[pos]}{line[pos + 1]}")
-            if merged > n:
-                continue
-            new = line[:pos] + [merged] + line[pos + 2:]
-            nrow = [new if k == ri else l for k, l in enumerate(row)]
-            rem = [c for c in candidates[idx + 1:] if c[0] != ri]
-            res = _repair(col, nrow, n, rem, budget)
-            if res:
-                return res
-    elif diff < 0:                            # cols short: merge col clues
-        for ci, line in enumerate(col):
-            for p in range(len(line) - 1):
-                merged = int(f"{line[p]}{line[p + 1]}")
-                if merged > n:
-                    continue
-                new = line[:p] + [merged] + line[p + 2:]
-                ncol = [new if k == ci else l for k, l in enumerate(col)]
-                res = _repair(ncol, row, n, candidates, budget)
-                if res:
-                    return res
+    diff = abs(sum(map(sum, col)) - sum(map(sum, row)))
+    for _cost, side, li, new_line in edits:
+        if (side, li) in used:
+            continue
+        if side == "row":
+            ncol = col
+            nrow = [new_line if k == li else l for k, l in enumerate(row)]
+        else:
+            ncol = [new_line if k == li else l for k, l in enumerate(col)]
+            nrow = row
+        if abs(sum(map(sum, ncol)) - sum(map(sum, nrow))) >= diff:
+            continue
+        res = _repair(ncol, nrow, n, edits, budget, used | {(side, li)})
+        if res:
+            return res
     return None
 
 
 def solvable_clues(img_path, g, clf=None):
     """Read clues and return (col_info, row_info, board), repairing mis-split
-    two-digit OCR errors using the solver as the oracle. Raises if no
+    and uncertain-digit OCR errors using the solver as the oracle. Raises if no
     consistent, solvable reading is found."""
-    col, row, candidates = read_clues_full(img_path, g, clf)
-    res = _repair(col, row, g["n"], candidates, budget=[5000])
+    col, row, edits = read_clues_full(img_path, g, clf)
+    res = _repair(col, row, g["n"], edits[:14], budget=[4000])
     if res:
         return res
     raise AssertionError(
