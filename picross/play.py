@@ -12,7 +12,6 @@ import time
 import auto
 import clue_ocr
 
-PENCIL = (1250, 2460)          # fill-mode button on a fresh puzzle (1440x3200)
 YELLOW_REGION = (2300, 2950)   # y-band of the control buttons
 
 
@@ -41,8 +40,9 @@ def solve_current():
         print(f"  ! {e}; skipping fill")
         return False
 
-    auto.tap(*PENCIL)                       # enter fill mode
-    # tap-only fill: swipes can fling past a run and over/under-fill
+    # Enter fill mode by tapping the first solution cell directly. Tapping the
+    # pencil *button* instead would fill the cursor cell (0,0) — wrong whenever
+    # board[0][0] is empty. tap-only (no swipes: those fling past a run).
     auto.fill(board, g, fill_button=None, swipe_runs=False)
 
     n = g["n"]
@@ -54,18 +54,17 @@ def solve_current():
                 return True
         return False
 
-    # trust the tap-only fill first; only repair if it didn't complete
+    # trust the tap-only fill first; only repair genuinely missed cells.
+    # We never remove "extra" cells: filled cells read back reliably (dark),
+    # so missing has no false positives, whereas an empty cell under the
+    # cursor can read as filled -> removing it would wrongly fill (0,0).
     for _ in range(3):
         if won():
             return True
         actual = auto.read_board("/tmp/play.png", g, n=n)
         missing = [(i, j) for i in range(n) for j in range(n)
                    if board[i][j] == 1 and actual[i][j] != 1]
-        extra = [(i, j) for i in range(n) for j in range(n)
-                 if board[i][j] != 1 and actual[i][j] == 1]
-        if not missing and not extra:
-            continue
-        for i, j in missing + extra:
+        for i, j in missing:
             auto.tap(*auto.cell_center(g, i, j))
     return not in_puzzle(auto.screenshot("/tmp/play.png"))
 
