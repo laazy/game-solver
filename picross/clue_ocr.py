@@ -243,15 +243,12 @@ def _repair(col, row, n, candidates, budget):
     are short we fall back to trying column merges. budget caps solve calls.
     Returns (col, row, board) or None."""
     import solver2
-    if clues_consistent(col, row):
-        if budget[0] > 0:
-            budget[0] -= 1
-            b = solver2.solve(col, row)
-            if b:
-                return col, row, b
-        return None
+    budget[0] -= 1                            # bound every call, not just solves
     if budget[0] <= 0:
         return None
+    if clues_consistent(col, row):
+        b = solver2.solve(col, row)
+        return (col, row, b) if b else None
     diff = sum(map(sum, col)) - sum(map(sum, row))
     if diff > 0:                              # rows short: merge row clues
         for idx, (ri, pos, _gap) in enumerate(candidates):
@@ -286,7 +283,7 @@ def solvable_clues(img_path, g, clf=None):
     two-digit OCR errors using the solver as the oracle. Raises if no
     consistent, solvable reading is found."""
     col, row, candidates = read_clues_full(img_path, g, clf)
-    res = _repair(col, row, g["n"], candidates, budget=[400])
+    res = _repair(col, row, g["n"], candidates, budget=[5000])
     if res:
         return res
     raise AssertionError(
