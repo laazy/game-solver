@@ -147,10 +147,31 @@ class ExecutionTests(unittest.TestCase):
     def test_board_with_missing_heart_stops_before_any_tap(self, stable_board, recognize, heart_count, run):
         stable_board.return_value = np.full((3200, 1440, 3), 255, dtype=np.uint8)
         recognize.return_value = [arrow(15, 20, 2, [(15, 20)])]
-        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False)
+        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False, min_hearts=3)
         with self.assertRaisesRegex(HeartLost, 'already has only 2'):
             solve_one(['adb'], args)
         run.assert_not_called()
+
+    @patch('arrows.solve.subprocess.run')
+    @patch('arrows.solve.count_hearts', return_value=2)
+    @patch('arrows.solve.recognize')
+    @patch('arrows.solve.stable_board')
+    def test_lower_minimum_allows_two_hearts(self, stable_board, recognize, heart_count, run):
+        stable_board.return_value = np.full((3200, 1440, 3), 255, dtype=np.uint8)
+        recognize.return_value = [arrow(15, 20, 2, [(15, 20)])]
+        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False, min_hearts=2)
+        evidence = {}
+        self.assertEqual(solve_one(['adb'], args, evidence), 1)
+        self.assertEqual(evidence['initial_hearts'], 2)
+        self.assertEqual(evidence['min_hearts'], 2)
+        run.assert_called_once()
+
+    @patch('time.sleep')
+    @patch('arrows.solve.match_ui', return_value=None)
+    @patch('arrows.solve.screenshot', return_value=heart_frame(1))
+    def test_loss_after_starting_with_two_hearts_stops(self, screenshot, match_ui, sleep):
+        with self.assertRaisesRegex(HeartLost, 'from 2 to 1'):
+            wait_for_victory(['adb'], 2)
 
     @patch('arrows.solve.count_hearts', return_value=3)
     @patch('arrows.solve.subprocess.run')
@@ -163,7 +184,7 @@ class ExecutionTests(unittest.TestCase):
         stable_board.return_value = np.full((3200, 1440, 3), 255, dtype=np.uint8)
         recognize.return_value = [arrow(15, 20, 2, [(15, 20)]),
                                   arrow(40, 20, 3, [(40, 20)])]
-        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False)
+        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False, min_hearts=3)
         self.assertEqual(solve_one(['adb'], args), 2)
         self.assertEqual(run.call_count, 1)
         commands = [c.args[0][-1] for c in run.call_args_list]
@@ -180,7 +201,7 @@ class ExecutionTests(unittest.TestCase):
         stable_board.return_value = np.full((3200, 1440, 3), 255, dtype=np.uint8)
         recognize.return_value = [arrow(15, 20, 2, [(15, 20)]),
                                   arrow(40, 20, 3, [(40, 20)])]
-        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False)
+        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False, min_hearts=3)
         evidence = {}
         solve_one(['adb'], args, evidence)
         moves = evidence['moves']
@@ -200,7 +221,7 @@ class ExecutionTests(unittest.TestCase):
     @patch('arrows.solve.recognize', side_effect=ValueError('unrecognized component'))
     @patch('arrows.solve.stable_board', return_value=np.zeros((3200, 1440, 3), dtype=np.uint8))
     def test_unrecognized_shape_is_not_hidden_by_theme_retry(self, stable_board, recognize, restore):
-        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False)
+        args = SimpleNamespace(batch_size=6, play=True, verify=False, interval=.08, monitor=False, min_hearts=3)
         evidence = {}
         with self.assertRaisesRegex(ValueError, 'unrecognized component'):
             solve_one(['adb'], args, evidence)

@@ -9,6 +9,8 @@ python3 arrows/solve.py --device 192.168.2.174:43345
 python3 arrows/solve.py --device 192.168.2.174:43345 --play
 # 只解两关，也可从通关或排行榜画面直接开始
 python3 arrows/solve.py --device 192.168.2.174:43345 --play --levels 2
+# 允许从已有两颗心的关卡开始；此后掉心或失败仍会停止
+python3 arrows/solve.py --device 192.168.2.174:43345 --play --min-hearts 2
 # 更谨慎但更慢：每批点击后截图核验
 python3 arrows/solve.py --device 192.168.2.174:43345 --play --verify
 ```
@@ -18,5 +20,7 @@ python3 arrows/solve.py --device 192.168.2.174:43345 --play --verify
 跨关时保留最近 16 次操作前的已有截图及点击坐标；发生异常时写入同一证据目录（`transition-*.jpg` 和 `plan.json` 的 `transition_history`）。截图仅覆盖仍在内存中的最近一次跨关，强制杀死进程或断电时不会自动落盘。
 
 默认点击间隔为 0.08 秒，可用 `--interval` 调整。较短间隔有漏点或碰撞风险；默认无中途截图，可能要到关卡结束才发现掉心，也可能无法确定具体是哪一次点击造成。脚本会处理实测遇到的排行榜、奖励、编织和收藏完成界面，并分别打印等待棋盘、识别、依赖规划、点击、通关及跨关各阶段耗时。识别区域和界面模板针对实测界面；不同主题、游戏更新、新类型弹窗以及屏幕锁定仍可能需要人工处理，脚本不能保证解决所有未来关卡。
+
+`--min-hearts` 可设为 1、2 或 3，默认 3；心数无法识别时仍会停止。此参数只降低开始时的门槛，不关闭掉心或失败检测，也不会启用重玩。
 
 执行识别、规划和失败处理测试：`python3 -m unittest discover -s arrows/tests -v`。

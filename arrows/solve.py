@@ -557,12 +557,12 @@ def solve_one(adb, args, evidence=None):
     initial_count = count_hearts(image)
     if initial_count is None:
         raise HeartLost('Cannot start: heart count is not readable', image)
-    if initial_count < 3:
+    if initial_count < args.min_hearts:
         raise HeartLost(f'Cannot start: board already has only {initial_count} hearts', image)
     wave_numbers = {arrow_index: wave_number
                     for wave_number, wave in enumerate(waves, 1)
                     for arrow_index in wave}
-    evidence.update(before=image, initial_hearts=initial_count, interval=args.interval,
+    evidence.update(before=image, initial_hearts=initial_count, min_hearts=args.min_hearts, interval=args.interval,
                     verify=args.verify, monitor=args.monitor,
                     screenshot_size=[int(image.shape[1]), int(image.shape[0])],
                     moves=[{'x': round(arrows[i].x * scale), 'y': round(arrows[i].y * scale),
@@ -712,6 +712,8 @@ def main():
     parser.add_argument('--play', action='store_true')
     parser.add_argument('--levels', type=int, default=0, help='number of levels to solve; 0 runs continuously (default)')
     parser.add_argument('--interval', type=float, default=.08, help='seconds between taps')
+    parser.add_argument('--min-hearts', type=int, choices=(1, 2, 3), default=3,
+                        help='minimum hearts required to start a board (default: 3); any subsequent loss stops the run')
     parser.add_argument('--batch-size', type=int, default=6, help='maximum independent taps per batch when --verify is enabled')
     parser.add_argument('--verify', action='store_true', help='check screenshots between independent batches')
     parser.add_argument('--monitor', action='store_true', help='monitor hearts asynchronously without waiting between batches')
@@ -732,7 +734,7 @@ def main():
                           if match_ui(initial, name)]
                 if any(name in states for name in ('victory', 'close', 'confirm')):
                     hearts = count_hearts(initial)
-                    if hearts is None or hearts < 3:
+                    if hearts is None or hearts < args.min_hearts:
                         raise HeartLost(f'Cannot advance: previous result has {hearts} readable hearts', initial)
                 if states:
                     args.advance_first = True
