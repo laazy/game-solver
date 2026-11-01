@@ -1,0 +1,24 @@
+[project]
+name = "game-solver"
+version = "0.1.0"
+description = "ADB-assisted game solvers"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fonttools>=4.60.2",
+    "matplotlib",
+    "numpy",
+    "opencv-python>=4.10,<5",
+    "pillow>=13.0.0",
+    "scipy",
+]
+
+[project.optional-dependencies]
+# The older TensorFlow-based recognizer is separate from the current solver.
+legacy-ocr = ["tensorflow"]
+
+[dependency-groups]
+dev = ["autopep8", "pylint", "rope"]
+
+[tool.uv]
+package = false

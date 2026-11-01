@@ -1,18 +1,18 @@
 # 箭头消除求解器
 
-需要 Python 3、NumPy、OpenCV (`opencv-python`) 和 adb。可选安装 Tesseract，用于无法根据本关箭头数量估算时读取编织计数。游戏需使用“彩色”主题并完整显示棋盘；手机需保持解锁且 ADB 连接可用。
+需要 Python 3.11 或更高版本、uv 和 adb。在项目根目录执行 `uv sync --locked` 安装依赖。可选安装 Tesseract，用于无法根据本关箭头数量估算时读取编织计数。游戏需使用“彩色”主题并完整显示棋盘；手机需保持解锁且 ADB 连接可用。
 
 ```sh
 # 只识别并打印当前关的规划，不操作设备
-python3 arrows/solve.py --device 192.168.2.174:43345
+uv run python arrows/solve.py --device 192.168.2.174:43345
 # 连续自动求解并进入下一关，直到 Ctrl-C 或发生无法恢复的异常
-python3 arrows/solve.py --device 192.168.2.174:43345 --play
+uv run python arrows/solve.py --device 192.168.2.174:43345 --play
 # 只解两关，也可从通关或排行榜画面直接开始
-python3 arrows/solve.py --device 192.168.2.174:43345 --play --levels 2
+uv run python arrows/solve.py --device 192.168.2.174:43345 --play --levels 2
 # 允许从已有两颗心的关卡开始；此后掉心或失败仍会停止
-python3 arrows/solve.py --device 192.168.2.174:43345 --play --min-hearts 2
+uv run python arrows/solve.py --device 192.168.2.174:43345 --play --min-hearts 2
 # 更谨慎但更慢：每批点击后截图核验
-python3 arrows/solve.py --device 192.168.2.174:43345 --play --verify
+uv run python arrows/solve.py --device 192.168.2.174:43345 --play --verify
 ```
 
 脚本等待棋盘稳定，以多尺度模板识别箭头并计算遮挡关系，规划安全顺序。默认连续发送整关点击、不在批次间截图；结束后检查通关状态和爱心。检测到掉心、失败弹窗、漏点或未通关时立即停止，不会自动重玩或自动重新执行；异常前后的截图及计划保存在 `arrows/failures/`。开启 `--verify` 时，每批只点击当前都畅通的箭头，并在批次间核验截图；`--monitor` 可在后台异步检查爱心而不等待每批截图。
@@ -23,4 +23,4 @@ python3 arrows/solve.py --device 192.168.2.174:43345 --play --verify
 
 `--min-hearts` 可设为 1、2 或 3，默认 3；心数无法识别时仍会停止。此参数只降低开始时的门槛，不关闭掉心或失败检测，也不会启用重玩。
 
-执行识别、规划和失败处理测试：`python3 -m unittest discover -s arrows/tests -v`。
+执行识别、规划和失败处理测试：`uv run python -m unittest discover -s arrows/tests -v`。
