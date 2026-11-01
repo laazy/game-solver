@@ -435,6 +435,20 @@ def solvable_clues(img_path, g, clf=None):
     repair swaps uncertain digits to their 2nd-best, using the solver as the
     oracle. Raises if nothing solves."""
     col, row, edits, _ = read_clues_full(img_path, g, clf)
+    n = g["n"]
+    # Frame repair: a clue with a block >= n fills the whole line, so it can
+    # only be [n]. Bordered (often user-created) boards misread a solid edge
+    # as e.g. [30, 1] -- pin it to [30] and drop its now-stale digit edits, so
+    # the confidence-aware repair below only has to fix the real misread.
+    pinned = set()
+    for j, c in enumerate(col):
+        if c and max(c) >= n and sum(c) + len(c) - 1 > n:
+            col[j] = [n]; pinned.add(("col", j))
+    for i, r in enumerate(row):
+        if r and max(r) >= n and sum(r) + len(r) - 1 > n:
+            row[i] = [n]; pinned.add(("row", i))
+    if pinned:
+        edits = [e for e in edits if (e[1], e[2]) not in pinned]
     # Stage 1: any single swap that balances and solves -- iterating every
     # glyph's runner-up is cheap (a consistency check, solving only on a match),
     # so this catches a lone confident misread that has no "uncertain" edit.

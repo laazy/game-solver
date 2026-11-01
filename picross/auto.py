@@ -26,6 +26,7 @@ ADB = os.environ.get("ADB", "adb")
 # screen coords; the grid itself is detected. Re-measure per device/game.
 NAV = {
     "win_continue": (718, 2417),      # checkmark on the victory screen
+    "reveal_continue": (720, 2570),   # checkmark on the galaxy-complete reveal
     "dialog_cancel": (1160, 1868),    # "取消" on the exit-confirm dialog
     "tile_xs": [143, 373, 603, 833, 1063, 1293],  # level-select tile columns
     "tile_ys": [2420, 2678],                       # level-select tile rows
@@ -357,17 +358,31 @@ def _warm_frac(px, cx, cy, r=85, step=8):
     return warm / total
 
 
-def find_next_tile(img_path):
-    """On the level-select screen, return the (x,y) of the first unplayed
-    tile (row-major). Completed tiles show a cream picture; unplayed tiles are
-    dark with a dimension label. Returns None if none visible."""
+def find_nth_unplayed_tile(img_path, k=0):
+    """(x,y) of the (k+1)-th unplayed tile (row-major), or None. k>0 lets the
+    caller skip levels that keep failing -- failed levels stay unplayed at the
+    front, so skipping the first k of them lands on the next fresh one.
+
+    Warmth is the max over the tile centre and 31px above it: the special
+    themed-galaxy reveal map sits ~31px higher than the normal level map, and
+    sampling only the normal centre made a completed tile there read dark enough
+    to be mistaken for unplayed (navigation then re-opened a solved level)."""
     im = Image.open(img_path).convert("RGB")
     px = im.load()
+    cnt = 0
     for y in NAV["tile_ys"]:
         for x in NAV["tile_xs"]:
-            if _warm_frac(px, x, y) < NAV["tile_open_frac"]:
-                return (x, y)
+            warm = max(_warm_frac(px, x, y), _warm_frac(px, x, y - 31))
+            if warm < NAV["tile_open_frac"]:
+                if cnt == k:
+                    return (x, y)
+                cnt += 1
     return None
+
+
+def find_next_tile(img_path):
+    """(x,y) of the first unplayed tile, or None. See find_nth_unplayed_tile."""
+    return find_nth_unplayed_tile(img_path, 0)
 
 
 def _region_frac(img_path, y0, y1, x0, x1, test):
@@ -379,9 +394,13 @@ def _region_frac(img_path, y0, y1, x0, x1, test):
 
 
 def in_puzzle(img_path):
-    """True while a puzzle (with its yellow controls) is on screen."""
+    """True while a puzzle (with its yellow controls) is on screen.
+
+    Threshold 0.08, not 0.02: the level-select map's yellow tile banners read
+    ~0.042 here and were misread as a puzzle, stalling navigation at galaxy
+    boundaries. Real puzzles read >=0.112, maps 0.042, victory 0.000."""
     return _region_frac(img_path, 2300, 2950, 0, 1440,
-                        lambda R, G, B: (R > 180) & (G > 140) & (B < 110)) > 0.02
+                        lambda R, G, B: (R > 180) & (G > 140) & (B < 110)) > 0.08
 
 
 def exit_dialog(img_path):
@@ -396,13 +415,15 @@ def level_select(img_path):
                         lambda R, G, B: (R > 120) | (G > 120)) > 0.05
 
 
-def start_next(wait=1.5, max_steps=10):
+def start_next(wait=1.5, max_steps=10, skips=0):
     """From the victory screen, advance to the next puzzle, robust to the
     galaxy interstitial and the stray exit-confirm dialog.
 
     State machine: dialog -> cancel; level-select -> tap next tile; otherwise
-    (victory/galaxy) -> continue then back. Returns True once in a puzzle."""
+    (victory/galaxy) -> continue then back. Returns True once in a puzzle.
+    skips>0 skips that many leading unplayed tiles (levels we gave up on)."""
     import time
+    stuck = 0
     for _ in range(max_steps):
         shot = screenshot("/tmp/_nav.png")
         if in_puzzle(shot):
@@ -410,21 +431,31 @@ def start_next(wait=1.5, max_steps=10):
         if exit_dialog(shot):
             tap(*NAV["dialog_cancel"])
             time.sleep(wait)
+            stuck = 0
             continue
         if level_select(shot):
-            nxt = find_next_tile(shot)
+            nxt = find_nth_unplayed_tile(shot, skips)
             if nxt:
                 tap(*nxt)
                 time.sleep(wait)
+                stuck = 0
                 continue
             # all visible levels done -> swipe the tile strip to page forward
             swipe(1100, 2545, 300, 2545, ms=400)
             time.sleep(wait)
+            stuck = 0
             continue
-        # victory or galaxy: back out toward level-select. Back works from
-        # both and avoids the victory buttons, whose layout shifts (a replay
-        # screen inserts a "retry" button where continue usually sits).
-        back()
+        # Unrecognized: victory / galaxy interstitial / galaxy-complete reveal.
+        # The reveal needs its checkmark "continue" (BACK won't dismiss it and
+        # it re-appears after an app restart, animating, so we must keep trying
+        # until its button settles); other screens clear on BACK. Alternate the
+        # two -- mis-taps on the reveal's neighbours (retry / share) are non-
+        # destructive (replay or a share sheet BACK dismisses).
+        if stuck % 2 == 0:
+            tap(*NAV["reveal_continue"])
+        else:
+            back()
+        stuck += 1
         time.sleep(wait)
     return in_puzzle(screenshot("/tmp/_nav.png"))
 

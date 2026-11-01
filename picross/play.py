@@ -11,6 +11,7 @@ import time
 
 import auto
 import clue_ocr
+import recover_board
 
 YELLOW_REGION = (2300, 2950)   # y-band of the control buttons
 
@@ -25,20 +26,41 @@ def _yellow_frac(img_path):
 
 
 def in_puzzle(img_path):
-    """True while the puzzle (with its yellow controls) is on screen."""
-    return _yellow_frac(img_path) > 0.02
+    """True while the puzzle (with its yellow controls) is on screen.
+
+    Threshold 0.08, not 0.02: the level-select map's yellow tile banners
+    (size labels / "UCC" tags) read ~0.042 in this band and would otherwise be
+    mistaken for a puzzle, so navigation never advanced past a galaxy boundary.
+    Real puzzles read >=0.112 (controls), maps 0.042, victory 0.000."""
+    return _yellow_frac(img_path) > 0.08
 
 
 def solve_current():
     """Solve the puzzle currently on screen. Returns True once the win screen
     is reached, False if OCR/solve failed (screen left untouched-ish)."""
     img = auto.screenshot("/tmp/play.png")
-    g = auto.detect_grid(img, n=None)
+    try:
+        g = auto.detect_grid(img, n=None)
+    except RuntimeError:
+        # not on a puzzle screen (map/interstitial) -- let the caller navigate.
+        print("  ! no grid on screen; not a puzzle")
+        return False
     try:
         col, row, board = clue_ocr.solvable_clues(img, g)
     except AssertionError as e:
-        print(f"  ! {e}; skipping fill")
-        return False
+        # OCR + light digit-edit repair couldn't make it consistent. Fall back
+        # to the line-recovery solver: drop the suspect line(s) and let the
+        # rest determine the true board (heals phantom/dropped blocks too).
+        print(f"  ! {e}; trying line-recovery")
+        cols, rows = clue_ocr.read_clues(img, g)
+        # max_free=2 is cheap: inconsistent frees short-circuit in propagation
+        # (a full 30x30 sweep fails in ~5s), so we can afford 2-line recovery.
+        out = recover_board.recover(cols, rows, max_free=2)
+        if out is None:
+            print("  ! recovery failed; skipping fill")
+            return False
+        _, _, board = out
+        print("  recovered board via free-line search")
 
     # Swipe-fill each run (primes fill mode on the second cell so the first
     # cell isn't eaten). No pencil button: tapping it would fill the cursor

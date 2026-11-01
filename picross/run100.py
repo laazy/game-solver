@@ -1,11 +1,13 @@
-"""Long-run picross autoplay: many levels with lag-clearing app restarts.
+"""Long-run picross autoplay.
 
-The fill itself is reliable (per-run swipe), but the game's touch input slowly
-lags over a long unattended run -- so we restart the app every `CHUNK` levels
-(and whenever a level fails to complete), which clears the lag. Saves persist.
+The fill is reliable (per-run swipe) and the OCR has a line-recovery fallback,
+so a healthy run needs no preventive restarts -- we restart the app only when a
+level genuinely fails (which also clears any input lag). Saves persist.
 
-Navigation never uses the in-game RESET (it wipes progress) and never presses
-BACK on the level map (that opens the app-exit dialog).
+All navigation goes through auto.start_next(): a state machine that walks
+victory -> galaxy -> level-select -> next tile, cancels the stray exit-confirm
+dialog, and -- crucially -- never presses BACK on the level map (that opens the
+app-exit dialog) and never touches the in-game RESET (it wipes progress).
 
     python3 run100.py [target]      # logs to /tmp/run100.log
 """
@@ -13,15 +15,11 @@ import sys
 import time
 
 import auto
-import clue_ocr
 import play
 
 PKG = "com.gmail.joystudio808.nonogram"
 LOG = "/tmp/run100.log"
-# The per-run swipe fill is reliable, so a healthy run doesn't need preventive
-# restarts -- we restart only when a level actually fails (lag/corruption).
-# Set CHUNK to a finite value to re-enable periodic restarts as insurance.
-CHUNK = 0                        # 0 = restart only on failure, never on schedule
+MAX_FAIL = 4                      # consecutive genuine failures -> stop
 
 
 def log(msg):
@@ -40,86 +38,59 @@ def restart_app():
     time.sleep(8)
 
 
-def solvable_here():
-    """(g, board) if the on-screen puzzle reads & solves, else None."""
-    img = auto.screenshot("/tmp/run.png")
-    if not play.in_puzzle(img):
-        return None
-    try:
-        g = auto.detect_grid(img, n=None)
-        _, _, board = clue_ocr.solvable_clues(img, g)
-        return g
-    except (AssertionError, RuntimeError):
-        return None
+def navigate(skips):
+    """Get a puzzle on screen from wherever we are (victory/galaxy/map/dialog),
+    skipping `skips` leading unplayed tiles (levels we gave up on). Returns True
+    once a puzzle is up. Safe: never backs out of the map."""
+    return auto.start_next(wait=1.5, max_steps=25, skips=skips)
 
 
-def leave_puzzle():
-    """Exit the current puzzle to the map (save & exit), non-destructively."""
+def leave_to_map():
+    """From a puzzle we're abandoning, back out to the level map (non-
+    destructively -- BACK from a puzzle saves & returns to the map; it only
+    opens the exit dialog when pressed ON the map, which we cancel just in
+    case). NEVER touches the in-game RESET."""
     auto.back()
-    time.sleep(1.2)
+    time.sleep(1.5)
     img = auto.screenshot("/tmp/run.png")
     if auto.exit_dialog(img):
-        auto.tap(*auto.NAV["confirm_yes"])       # 是 = save & exit
+        auto.tap(*auto.NAV["dialog_cancel"])
         time.sleep(1.2)
 
 
-def goto_fresh_puzzle(tries=25):
-    """Land in a solvable puzzle: tap unplayed tiles, skipping corrupted ones
-    (page forward past them). Returns True if in a solvable puzzle."""
-    skipped = 0
-    for _ in range(tries):
-        img = auto.screenshot("/tmp/run.png")
-        if play.in_puzzle(img):
-            if solvable_here():
-                return True
-            leave_puzzle()                        # corrupted -> exit & skip
-            auto.swipe(1100, 2545, 300, 2545, ms=400)
-            time.sleep(1.0)
-            skipped += 1
-            continue
-        if auto.level_select(img):
-            tile = auto.find_next_tile(img)
-            if tile:
-                auto.tap(*tile)
-                time.sleep(1.8)
-            else:
-                auto.swipe(1100, 2545, 300, 2545, ms=400)   # page forward
-                time.sleep(1.0)
-            continue
-        auto.back()                               # victory/galaxy interstitial
-        time.sleep(1.0)
-    log(f"goto_fresh_puzzle gave up (skipped {skipped})")
-    return False
-
-
 def main(target):
-    done = 0
-    since_restart = 0
-    fails = 0
-    if not goto_fresh_puzzle():
+    done = skips = nav_fail = 0
+    if not navigate(skips):
         restart_app()
-        goto_fresh_puzzle()
+        navigate(skips)
     while done < target:
-        if play.play_one():                       # solve current + advance
-            done += 1
-            since_restart += 1
-            fails = 0
-            log(f"level complete ({done}/{target})")
-            if CHUNK and since_restart >= CHUNK:
-                restart_app()
-                since_restart = 0
-                if not goto_fresh_puzzle():
-                    log("could not re-enter after restart")
-                    break
-        else:
-            fails += 1
-            log(f"level failed (streak {fails}) -> restart + re-enter")
+        img = auto.screenshot("/tmp/run.png")
+        if not play.in_puzzle(img):
+            # between levels (victory/galaxy/map): walk to the next puzzle.
+            if navigate(skips):
+                nav_fail = 0
+                continue
+            nav_fail += 1
+            log(f"can't reach a puzzle (streak {nav_fail}) -> restart")
             restart_app()
-            since_restart = 0
-            if not goto_fresh_puzzle() or fails >= 4:
-                log("repeated failure; stopping")
+            if not navigate(skips):
+                nav_fail += 1
+            if nav_fail >= 6:               # app/adb truly dead -> give up
+                log("navigation dead; stopping")
                 break
-    log(f"=== DONE: completed {done}/{target} ===")
+            continue
+        nav_fail = 0
+        if play.solve_current():            # solve only; navigation is loop-top
+            done += 1
+            log(f"level complete ({done}/{target}, skipped {skips})")
+        else:
+            # Unsolvable (OCR beyond recovery). Don't stop -- skip it and press
+            # on. It stays unplayed at the front, so bumping `skips` makes the
+            # next navigation land on the following fresh level.
+            skips += 1
+            log(f"level UNSOLVABLE -> skip ({skips} skipped, {done} done)")
+            leave_to_map()
+    log(f"=== DONE: completed {done}/{target}, skipped {skips} ===")
 
 
 if __name__ == "__main__":
